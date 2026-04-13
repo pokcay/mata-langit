@@ -30,6 +30,11 @@ test:
   database: build_new_test
 
 # Solid Queue, Solid Cache, and Solid Cable all share this single primary database.
+staging:
+  <<: *default
+  database: build_new_staging
+  url: <%= ENV["DATABASE_URL"] %>
+
 production:
   <<: *default
   database: build_new_production

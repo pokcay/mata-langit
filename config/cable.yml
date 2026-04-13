@@ -9,7 +9,10 @@ test:
   adapter: test
 
 # Solid Cable uses the primary database (no separate `connects_to`).
-production:
+staging: &solid_cable
   adapter: solid_cable
   polling_interval: 0.1.seconds
   message_retention: 1.day
+
+production:
+  <<: *solid_cable

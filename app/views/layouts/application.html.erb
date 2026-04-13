@@ -3,10 +3,22 @@
   <head>
     <title inertia><%= content_for(:title) || "Build New" %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
+
+    <script>
+      // Apply system color scheme to <html> before first paint to avoid FOUC.
+      (function () {
+        var root = document.documentElement;
+        var mq = window.matchMedia('(prefers-color-scheme: dark)');
+        var apply = function (dark) { root.classList.toggle('dark', dark); };
+        apply(mq.matches);
+        mq.addEventListener('change', function (e) { apply(e.matches); });
+      })();
+    </script>
 
     <%= yield :head %>
 

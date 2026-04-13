@@ -11,6 +11,10 @@ development:
 test:
   <<: *default
 
+staging:
+  # Solid Cache uses the primary database (no separate `database` entry).
+  <<: *default
+
 production:
   # Solid Cache uses the primary database (no separate `database` entry).
   <<: *default
