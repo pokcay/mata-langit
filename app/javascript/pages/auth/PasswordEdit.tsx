@@ -27,7 +27,7 @@ export default function PasswordEdit({ token }: Props) {
         <meta property="og:description" content="Set a new password for your account." />
       </Head>
       <AuthShell>
-        <h1>Choose a new password</h1>
+        <h2>Choose a new password</h2>
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div className="space-y-2">
             <label
@@ -46,7 +46,7 @@ export default function PasswordEdit({ token }: Props) {
               onChange={(e) => form.setData("password", e.target.value)}
             />
             {errors.password && (
-              <p className="text-xs text-signal">{errors.password}</p>
+              <p className="text-xs text-danger-display">{errors.password}</p>
             )}
           </div>
           <Button type="submit" disabled={form.processing}>

@@ -57,7 +57,7 @@ export default function ProfileDetails() {
                 onChange={(e) => emailForm.setData("email", e.target.value)}
               />
               {errors.email && (
-                <p className="text-xs text-signal">{errors.email}</p>
+                <p className="text-xs text-danger-display">{errors.email}</p>
               )}
             </div>
             <Button type="submit" disabled={emailForm.processing}>

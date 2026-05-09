@@ -1,6 +1,8 @@
 import * as React from "react";
-import { Menu, X } from "lucide-react";
+import { Link } from "@inertiajs/react";
+import { ArrowLeft, ExternalLink, Menu, X } from "lucide-react";
 import { SidebarNav } from "@/components/design-system/SidebarNav";
+import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { ColorsSection } from "@/components/design-system/sections/branding/ColorsSection";
 import { TypographySection } from "@/components/design-system/sections/branding/TypographySection";
@@ -39,7 +41,21 @@ export function DesignSystem() {
             Design System
           </span>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/admin">
+              <ArrowLeft className="h-4 w-4" />
+              Admin home
+            </Link>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
+            <a href="/" target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="h-4 w-4" />
+              App home
+            </a>
+          </Button>
+          <ThemeToggle />
+        </div>
       </header>
 
       <div className="mx-auto flex max-w-7xl">

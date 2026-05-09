@@ -26,8 +26,8 @@ export default function Login() {
       </Head>
       <AuthShell>
         <div className="text-center">
-          <h1>Log in</h1>
-          <p className="mt-2">
+          <h2>Log in</h2>
+          <p className="mt-2 text-sm text-ink-muted">
             Don&apos;t have an account? <Link href="/signup">Sign up</Link>
           </p>
         </div>
@@ -38,7 +38,7 @@ export default function Login() {
           </p>
         )}
         {baseError && (
-          <p className="mt-4 text-center text-sm text-signal">{baseError}</p>
+          <p className="mt-4 text-center text-sm text-danger-display">{baseError}</p>
         )}
 
         <form onSubmit={submit} className="mt-6 space-y-4">

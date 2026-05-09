@@ -34,6 +34,10 @@ module Authentication
       redirect_to login_path
     end
 
+    def redirect_if_authenticated
+      redirect_to root_path if resume_session
+    end
+
     def after_authentication_url
       session.delete(:return_to_after_authenticating) || dashboard_url
     end

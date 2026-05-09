@@ -32,8 +32,8 @@ export default function Signup() {
       </Head>
       <AuthShell>
         <div className="text-center">
-          <h1>Create your account</h1>
-          <p className="mt-2">
+          <h2>Create your account</h2>
+          <p className="mt-2 text-sm text-ink-muted">
             Already have an account? <Link href="/login">Log in</Link>
           </p>
         </div>
@@ -56,7 +56,7 @@ export default function Signup() {
               onChange={(e) => form.setData("email", e.target.value)}
             />
             {errors.email && (
-              <p className="text-xs text-signal">{errors.email}</p>
+              <p className="text-xs text-danger-display">{errors.email}</p>
             )}
           </div>
           <div className="space-y-2">
@@ -76,7 +76,7 @@ export default function Signup() {
               onChange={(e) => form.setData("password", e.target.value)}
             />
             {errors.password && (
-              <p className="text-xs text-signal">{errors.password}</p>
+              <p className="text-xs text-danger-display">{errors.password}</p>
             )}
           </div>
           <Button type="submit" disabled={form.processing}>

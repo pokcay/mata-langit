@@ -61,7 +61,7 @@ export default function ProfilePassword() {
                 }
               />
               {errors.current_password && (
-                <p className="text-xs text-signal">{errors.current_password}</p>
+                <p className="text-xs text-danger-display">{errors.current_password}</p>
               )}
             </div>
             <div className="space-y-2">
@@ -83,7 +83,7 @@ export default function ProfilePassword() {
                 }
               />
               {errors.password && (
-                <p className="text-xs text-signal">{errors.password}</p>
+                <p className="text-xs text-danger-display">{errors.password}</p>
               )}
             </div>
             <Button type="submit" disabled={passwordForm.processing}>

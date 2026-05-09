@@ -51,20 +51,20 @@ export const SPLASH: PaletteEntry[] = [
   {
     name: "accent",
     utility: "bg-accent / text-accent",
-    hexLight: "#0891b2",
-    hexDark: "#0891b2",
+    hexLight: "oklch(71.5% 0.143 215.221)",
+    hexDark: "oklch(78.9% 0.154 211.53)",
   },
   {
     name: "accent-faded",
     utility: "bg-accent-faded",
-    hexLight: "#e1f2f6",
-    hexDark: "#031f33",
+    hexLight: "oklch(96% 0.025 215.221)",
+    hexDark: "oklch(22% 0.045 211.53)",
   },
   {
-    name: "accent-darker",
-    utility: "bg-accent-darker / text-accent-darker",
-    hexLight: "#0e7490",
-    hexDark: "#0e7490",
+    name: "accent-display",
+    utility: "bg-accent-display / text-accent-display",
+    hexLight: "oklch(62% 0.135 215.221)",
+    hexDark: "oklch(86% 0.135 211.53)",
   },
   {
     name: "signal",
@@ -79,14 +79,32 @@ export const SPLASH: PaletteEntry[] = [
     hexDark: "#2f2b21",
   },
   {
-    name: "signal-darker",
-    utility: "bg-signal-darker / text-signal-darker",
-    hexLight: "#b45309",
-    hexDark: "#b45309",
+    name: "signal-display",
+    utility: "bg-signal-display / text-signal-display",
+    hexLight: "oklch(76% 0.165 82)",
+    hexDark: "oklch(93% 0.13 95)",
+  },
+  {
+    name: "danger",
+    utility: "bg-danger / text-danger",
+    hexLight: "oklch(64% 0.22 25)",
+    hexDark: "oklch(72% 0.20 22)",
+  },
+  {
+    name: "danger-faded",
+    utility: "bg-danger-faded",
+    hexLight: "oklch(96% 0.025 25)",
+    hexDark: "oklch(22% 0.05 22)",
+  },
+  {
+    name: "danger-display",
+    utility: "bg-danger-display / text-danger-display",
+    hexLight: "oklch(55% 0.20 25)",
+    hexDark: "oklch(82% 0.18 22)",
   },
 ];
 
 export const FONTS = {
-  display: "Inter",
+  display: "Stack Sans Text",
   body: "DM Sans",
 };

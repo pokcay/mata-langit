@@ -23,7 +23,7 @@ export default function PasswordNew() {
         <meta property="og:description" content="Request a password reset link by email." />
       </Head>
       <AuthShell>
-        <h1>Reset your password</h1>
+        <h2>Reset your password</h2>
         <p className="mt-2">We&apos;ll email you a link to set a new password.</p>
 
         {props.flash?.notice && (
