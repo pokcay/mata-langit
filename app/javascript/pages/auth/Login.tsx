@@ -43,12 +43,7 @@ export default function Login() {
 
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div className="space-y-2">
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-ink-display"
-            >
-              Email
-            </label>
+            <label htmlFor="email">Email</label>
             <Input
               id="email"
               type="email"
@@ -59,12 +54,7 @@ export default function Login() {
             />
           </div>
           <div className="space-y-2">
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-ink-display"
-            >
-              Password
-            </label>
+            <label htmlFor="password">Password</label>
             <Input
               id="password"
               type="password"

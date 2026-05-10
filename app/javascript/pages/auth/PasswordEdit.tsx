@@ -30,12 +30,7 @@ export default function PasswordEdit({ token }: Props) {
         <h2>Choose a new password</h2>
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div className="space-y-2">
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-ink-display"
-            >
-              New password
-            </label>
+            <label htmlFor="password">New password</label>
             <Input
               id="password"
               type="password"

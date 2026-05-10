@@ -43,12 +43,7 @@ export default function ProfilePassword() {
         <section className="mt-10 max-w-md">
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
-              <label
-                htmlFor="current_password"
-                className="block text-sm font-medium text-ink-display"
-              >
-                Current password
-              </label>
+              <label htmlFor="current_password">Current password</label>
               <Input
                 id="current_password"
                 type="password"
@@ -65,12 +60,7 @@ export default function ProfilePassword() {
               )}
             </div>
             <div className="space-y-2">
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-ink-display"
-              >
-                New password
-              </label>
+              <label htmlFor="password">New password</label>
               <Input
                 id="password"
                 type="password"

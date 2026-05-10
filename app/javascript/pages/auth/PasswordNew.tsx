@@ -32,12 +32,7 @@ export default function PasswordNew() {
 
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div className="space-y-2">
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-ink-display"
-            >
-              Email
-            </label>
+            <label htmlFor="email">Email</label>
             <Input
               id="email"
               type="email"
