@@ -11,6 +11,9 @@
 default: &default
   adapter: postgresql
   encoding: unicode
+  # macOS 26+ crashes the forked Solid Queue child if libpq probes GSSAPI on
+  # connect (multi-threaded fork unsafe via Kerberos/XPC). Disable explicitly.
+  gssencmode: disable
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
   username: <%= ENV.fetch("DATABASE_USER") { ENV["USER"] } %>
   password: <%= ENV["DATABASE_PASSWORD"] %>
