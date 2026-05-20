@@ -7,3 +7,25 @@ db/schema.rb linguist-generated
 vendor/* linguist-vendored
 config/credentials/*.yml.enc diff=rails_credentials
 config/credentials.yml.enc diff=rails_credentials
+
+# Normalize line endings: use LF in the repo, checkout as-is on Windows
+* text=auto eol=lf
+
+# Windows-specific scripts use CRLF
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Ruby and config files always LF
+*.rb text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.css text eol=lf
+
+# Shell scripts always LF (for WSL/Git Bash compatibility)
+bin/* text eol=lf

@@ -7,18 +7,55 @@ def system!(*args)
   system(*args, exception: true)
 end
 
+def check_command(cmd)
+  system(cmd, out: File::NULL, err: File::NULL)
+end
+
+def windows?
+  Gem.win_platform?
+end
+
 FileUtils.chdir APP_ROOT do
   # This script is a way to set up or update your development environment automatically.
   # This script is idempotent, so that you can run it at any time and get an expectable outcome.
   # Add necessary setup steps to this file.
 
-  puts "== Installing dependencies =="
-  system("bundle check") || system!("bundle install")
+  puts "== Checking prerequisites =="
 
-  # puts "\n== Copying sample files =="
-  # unless File.exist?("config/database.yml")
-  #   FileUtils.cp "config/database.yml.sample", "config/database.yml"
-  # end
+  # Check Ruby version
+  required_ruby = File.read(".ruby-version").strip rescue nil
+  if required_ruby
+    current_ruby = RUBY_VERSION
+    if current_ruby == required_ruby
+      puts "  Ruby #{current_ruby} ✓"
+    else
+      puts "  WARNING: Ruby #{required_ruby} is required, but you have #{current_ruby}."
+      puts "  Download from: https://rubyinstaller.org/ (Windows) or https://rvm.io (Linux/Mac)"
+    end
+  end
+
+  # Check Node.js
+  if check_command("node --version")
+    node_version = `node --version`.strip rescue "unknown"
+    puts "  Node.js #{node_version} ✓"
+  else
+    abort "  ERROR: Node.js not found. Install from https://nodejs.org (>=22.12.0)"
+  end
+
+  # Check PostgreSQL
+  if check_command("psql --version")
+    pg_version = `psql --version`.strip rescue "unknown"
+    puts "  PostgreSQL found (#{pg_version}) ✓"
+  else
+    if windows?
+      abort "  ERROR: PostgreSQL not found.\n  Install from: https://www.enterprisedb.com/downloads/postgres-postgresql-downloads\n  Make sure to add PostgreSQL bin/ directory to your PATH."
+    else
+      abort "  ERROR: PostgreSQL not found. Install PostgreSQL 10+ and make sure it is running."
+    end
+  end
+
+  puts "\n== Installing dependencies =="
+  system("bundle check") || system!("bundle install")
 
   puts "\n== Preparing database =="
   system! "bin/rails db:prepare"
@@ -29,5 +66,9 @@ FileUtils.chdir APP_ROOT do
   puts "\n== Done =="
   puts "Next steps:"
   puts "  npm install"
-  puts "  bin/dev"
+  if windows?
+    puts "  .\\bin\\dev.ps1    # PowerShell"
+  else
+    puts "  bin/dev"
+  end
 end
