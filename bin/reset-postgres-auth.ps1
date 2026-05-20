@@ -2,14 +2,13 @@
 # One-time script to switch local PostgreSQL connections to trust mode (no password).
 # For LOCAL DEVELOPMENT ONLY. Never run on production.
 #
-# Usage: right-click PowerShell → "Run as Administrator", then:
+# Usage: right-click PowerShell -> "Run as Administrator", then:
 #   .\bin\reset-postgres-auth.ps1
 #
-# Or run directly — the script will self-elevate via UAC.
+# Or run directly -- the script will self-elevate via UAC.
 
 $ErrorActionPreference = "Stop"
 
-# Self-elevate to Administrator if not already
 $currentUser = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentUser.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "Requesting Administrator privileges..." -ForegroundColor Yellow
@@ -22,7 +21,6 @@ Write-Host ""
 Write-Host "=== PostgreSQL Trust Mode Setup ===" -ForegroundColor Cyan
 Write-Host ""
 
-# Find PostgreSQL installation
 $pgDir = Get-ChildItem "C:\Program Files\PostgreSQL" -ErrorAction SilentlyContinue |
          Sort-Object Name -Descending | Select-Object -First 1
 if (-not $pgDir) {
@@ -46,20 +44,17 @@ if (-not (Test-Path $hbaFile)) {
     exit 1
 }
 
-# Backup
 $backup = "$hbaFile.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 Copy-Item $hbaFile $backup
-Write-Host "Backup created: $backup" -ForegroundColor Green
+Write-Host "[OK] Backup created: $backup" -ForegroundColor Green
 
-# Replace scram-sha-256 / md5 / password with trust on local + host 127.0.0.1 + ::1 lines
 $content = Get-Content $hbaFile -Raw
 $content = $content -replace '(?m)^(local\s+\S+\s+\S+\s+)(scram-sha-256|md5|password)', '$1trust'
 $content = $content -replace '(?m)^(host\s+\S+\s+\S+\s+(127\.0\.0\.1/32|::1/128|samehost|samenet)\s+)(scram-sha-256|md5|password)', '$1trust'
 Set-Content -Path $hbaFile -Value $content -NoNewline
 
-Write-Host "Updated pg_hba.conf to use 'trust' for local connections" -ForegroundColor Green
+Write-Host "[OK] Updated pg_hba.conf to use 'trust' for local connections" -ForegroundColor Green
 
-# Restart service
 Write-Host ""
 Write-Host "Restarting $serviceName..." -ForegroundColor Yellow
 Restart-Service -Name $serviceName -Force
@@ -67,7 +62,7 @@ Start-Sleep -Seconds 2
 
 $status = (Get-Service -Name $serviceName).Status
 if ($status -eq "Running") {
-    Write-Host "PostgreSQL service is running ✓" -ForegroundColor Green
+    Write-Host "[OK] PostgreSQL service is running" -ForegroundColor Green
 } else {
     Write-Host "WARNING: Service status is $status" -ForegroundColor Yellow
 }
