@@ -15,6 +15,20 @@ def windows?
   Gem.win_platform?
 end
 
+def find_pg_bin_windows
+  Dir.glob("C:/Program Files/PostgreSQL/*/bin").max_by do |path|
+    path.match(/(\d+)/)[1].to_i rescue 0
+  end
+end
+
+def add_to_user_path(dir)
+  current = `powershell -Command "[Environment]::GetEnvironmentVariable('PATH', 'User')"`.strip
+  return if current.downcase.include?(dir.downcase)
+  new_path = "#{dir};#{current}"
+  system("powershell -Command \"[Environment]::SetEnvironmentVariable('PATH', '#{new_path}', 'User')\"",
+         out: File::NULL, err: File::NULL)
+end
+
 FileUtils.chdir APP_ROOT do
   # This script is a way to set up or update your development environment automatically.
   # This script is idempotent, so that you can run it at any time and get an expectable outcome.
@@ -26,7 +40,10 @@ FileUtils.chdir APP_ROOT do
   required_ruby = File.read(".ruby-version").strip rescue nil
   if required_ruby
     current_ruby = RUBY_VERSION
-    if current_ruby == required_ruby
+    req_parts = required_ruby.split(".").map(&:to_i)
+    cur_parts = current_ruby.split(".").map(&:to_i)
+    compatible = cur_parts[0] == req_parts[0] && cur_parts[1] == req_parts[1] && cur_parts[2] >= req_parts[2]
+    if compatible
       puts "  Ruby #{current_ruby} ✓"
     else
       puts "  WARNING: Ruby #{required_ruby} is required, but you have #{current_ruby}."
@@ -42,17 +59,26 @@ FileUtils.chdir APP_ROOT do
     abort "  ERROR: Node.js not found. Install from https://nodejs.org (>=22.12.0)"
   end
 
-  # Check PostgreSQL
-  if check_command("psql --version")
-    pg_version = `psql --version`.strip rescue "unknown"
-    puts "  PostgreSQL found (#{pg_version}) ✓"
-  else
+  # Check PostgreSQL — auto-detect and add to PATH on Windows if needed
+  unless check_command("psql --version")
     if windows?
-      abort "  ERROR: PostgreSQL not found.\n  Install from: https://www.enterprisedb.com/downloads/postgres-postgresql-downloads\n  Make sure to add PostgreSQL bin/ directory to your PATH."
+      pg_bin = find_pg_bin_windows
+      if pg_bin
+        puts "  PostgreSQL found at #{pg_bin}, adding to PATH..."
+        ENV["PATH"] = "#{pg_bin};#{ENV["PATH"]}"
+        add_to_user_path(pg_bin)
+        puts "  PATH updated. Future terminals will also have PostgreSQL available."
+      else
+        abort "  ERROR: PostgreSQL not found.\n" \
+              "  Install from: https://www.enterprisedb.com/downloads/postgres-postgresql-downloads"
+      end
     else
       abort "  ERROR: PostgreSQL not found. Install PostgreSQL 10+ and make sure it is running."
     end
   end
+
+  pg_version = `psql --version`.strip rescue "unknown"
+  puts "  PostgreSQL (#{pg_version}) ✓"
 
   puts "\n== Installing dependencies =="
   system("bundle check") || system!("bundle install")
