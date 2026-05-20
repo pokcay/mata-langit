@@ -30,14 +30,14 @@ def add_to_user_path(dir)
 end
 
 def ensure_pg_service_running_windows
-  svc_name = `powershell -Command "Get-Service | Where-Object { $_.Name -like 'postgresql*' } | Select-Object -ExpandProperty Name -First 1"`.strip rescue ""
+  svc_name = `powershell -Command "Get-Service -Name 'postgresql*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name -First 1"`.strip rescue ""
   return if svc_name.empty?
 
-  status = `powershell -Command "(Get-Service '#{svc_name}').Status"`.strip rescue ""
+  status = `powershell -Command "(Get-Service -Name '#{svc_name}').Status"`.strip rescue ""
   return if status == "Running"
 
   puts "  PostgreSQL service (#{svc_name}) is not running. Starting..."
-  started = system("powershell -Command \"Start-Service '#{svc_name}'\"", out: File::NULL, err: File::NULL)
+  started = system("net start #{svc_name}", out: File::NULL, err: File::NULL)
   if started
     sleep 2
     puts "  PostgreSQL service started ✓"
