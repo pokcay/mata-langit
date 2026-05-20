@@ -34,7 +34,10 @@ def ensure_pg_service_running_windows
   return if svc_name.empty?
 
   status = `powershell -Command "(Get-Service -Name '#{svc_name}').Status"`.strip rescue ""
-  return if status == "Running"
+  if status == "Running"
+    puts "  PostgreSQL service (#{svc_name}) is running ✓"
+    return
+  end
 
   puts "  PostgreSQL service (#{svc_name}) is not running. Starting..."
   started = system("net start #{svc_name}", out: File::NULL, err: File::NULL)
@@ -47,6 +50,53 @@ def ensure_pg_service_running_windows
     puts "  Or manually: Start → search 'Services' → find PostgreSQL → right-click → Start"
     abort
   end
+end
+
+def prompt(question, default = nil)
+  display = default ? "#{question} [#{default}]: " : "#{question}: "
+  print display
+  input = $stdin.gets&.strip
+  input.nil? || input.empty? ? default : input
+end
+
+def ensure_env_file
+  return if File.exist?(".env")
+  return unless File.exist?(".env.example")
+
+  puts "\n== Creating .env file =="
+  puts "  No .env found. Let's set up your PostgreSQL credentials."
+  puts "  (Press Enter to accept defaults shown in brackets)"
+  puts ""
+
+  user     = prompt("  PostgreSQL username", "postgres")
+  password = prompt("  PostgreSQL password (leave empty if none)", "")
+  host     = prompt("  PostgreSQL host", "127.0.0.1")
+  port     = prompt("  PostgreSQL port", "5432")
+
+  content = File.read(".env.example")
+  content = content.sub(/^DATABASE_USER=.*/,     "DATABASE_USER=#{user}")
+  content = content.sub(/^DATABASE_PASSWORD=.*/, "DATABASE_PASSWORD=#{password}")
+  content = content.sub(/^DATABASE_HOST=.*/,     "DATABASE_HOST=#{host}")
+  content = content.sub(/^DATABASE_PORT=.*/,     "DATABASE_PORT=#{port}")
+  File.write(".env", content)
+  puts "  Created .env ✓"
+
+  # Load .env into ENV for the rest of this setup run
+  File.foreach(".env") do |line|
+    next if line.strip.empty? || line.start_with?("#")
+    if line =~ /\A([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\z/i
+      ENV[$1] ||= $2.strip
+    end
+  end
+end
+
+def test_pg_connection
+  user = ENV["DATABASE_USER"] || ENV["USERNAME"] || ENV["USER"]
+  host = ENV["DATABASE_HOST"] || "127.0.0.1"
+  port = ENV["DATABASE_PORT"] || "5432"
+  ENV["PGPASSWORD"] = ENV["DATABASE_PASSWORD"] || ""
+  result = `psql -U "#{user}" -h "#{host}" -p "#{port}" -d postgres -c "SELECT 1" 2>&1`
+  $?.success? ? [true, result] : [false, result]
 end
 
 FileUtils.chdir APP_ROOT do
@@ -101,6 +151,23 @@ FileUtils.chdir APP_ROOT do
 
   pg_version = `psql --version`.strip rescue "unknown"
   puts "  PostgreSQL (#{pg_version}) ✓"
+
+  ensure_env_file
+
+  puts "\n== Testing PostgreSQL connection =="
+  ok, msg = test_pg_connection
+  if ok
+    puts "  Connection OK ✓"
+  else
+    puts "  ERROR: Could not connect to PostgreSQL:"
+    puts msg.lines.map { |l| "    #{l}" }.join
+    puts ""
+    puts "  Common fixes:"
+    puts "    - Check DATABASE_USER and DATABASE_PASSWORD in .env"
+    puts "    - Try DATABASE_HOST=127.0.0.1 (instead of localhost)"
+    puts "    - Make sure PostgreSQL service is running"
+    abort
+  end
 
   rails = windows? ? "ruby bin/rails" : "bin/rails"
 

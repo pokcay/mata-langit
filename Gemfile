@@ -37,6 +37,9 @@ group :development, :test do
 
   # Omakase Ruby styling [https://github.com/rails/rubocop-rails-omakase/]
   gem "rubocop-rails-omakase", require: false
+
+  # Loads .env file into ENV so DATABASE_USER, DATABASE_PASSWORD, etc. work.
+  gem "dotenv-rails"
 end
 
 group :development do
