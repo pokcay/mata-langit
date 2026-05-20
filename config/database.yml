@@ -19,31 +19,30 @@ default: &default
   password: <%= ENV["DATABASE_PASSWORD"] %>
   host: <%= ENV.fetch("DATABASE_HOST") { "127.0.0.1" } %>
   port: <%= ENV.fetch("DATABASE_PORT") { 5432 } %>
-
-# Local development/test defaults: disable SSL and GSSAPI negotiation.
-# PostgreSQL on Windows sometimes terminates the libpq connection during
-# SSL/GSSAPI negotiation, producing "server closed the connection
-# unexpectedly". Disabling both makes local development reliable.
-local_default: &local_default
-  <<: *default
+  # Disable SSL and GSSAPI negotiation for local development.
+  # PostgreSQL on Windows sometimes terminates the libpq connection during
+  # SSL/GSSAPI negotiation, producing "server closed the connection
+  # unexpectedly". Disabling both makes local development reliable.
+  # Override per-environment (e.g. production) below or via env vars.
   sslmode: <%= ENV.fetch("DATABASE_SSLMODE") { "disable" } %>
   gssencmode: <%= ENV.fetch("DATABASE_GSSENCMODE") { "disable" } %>
 
 <% db_name = ENV.fetch("DATABASE_NAME") { File.basename(Rails.root).gsub(/[^a-zA-Z0-9]/, "_").downcase } %>
 
 development:
-  <<: *local_default
+  <<: *default
   database: <%= "#{db_name}_development" %>
 
 # Warning: The database defined as "test" will be erased and
 # re-generated from your development database when you run "rake".
 # Do not set this db to the same as development or production.
 test:
-  <<: *local_default
+  <<: *default
   database: <%= "#{db_name}_test" %>
 
 # Solid Queue, Solid Cache, and Solid Cable all share this single primary database.
 # In production, set DATABASE_URL or override the connection settings via env vars.
+# Note: sslmode/gssencmode inherit from default (disable) — override via env in production.
 staging:
   <<: *default
   database: <%= "#{db_name}_staging" %>
