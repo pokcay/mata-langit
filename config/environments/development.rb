@@ -57,8 +57,10 @@ Rails.application.configure do
   # Highlight code that enqueued background job in logs.
   config.active_job.verbose_enqueue_logs = true
 
-  # Use SolidQueue for background jobs in development
-  config.active_job.queue_adapter = :solid_queue
+  # Background job adapter: SolidQueue on Unix-like systems, :async on Windows.
+  # SolidQueue's supervisor process uses SIGQUIT/SIGTERM which Windows doesn't
+  # support, so on Windows we run jobs in-process inside the Rails server.
+  config.active_job.queue_adapter = Gem.win_platform? ? :async : :solid_queue
 
   # Raises error for missing translations.
   # config.i18n.raise_on_missing_translations = true

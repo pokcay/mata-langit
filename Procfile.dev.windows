@@ -1,0 +1,2 @@
+web: ruby bin/rails s
+vite: ruby bin/vite dev
