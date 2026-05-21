@@ -1,0 +1,4 @@
+web: ruby bin/rails s
+vite: ruby bin/vite dev
+ssr_build: ruby bin/vite build --ssr --watch
+ssr: ruby bin/vite ssr

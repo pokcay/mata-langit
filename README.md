@@ -91,6 +91,16 @@ Or run the reset script manually (right-click → Run as Administrator):
 Get-NetTCPConnection -LocalPort 3000 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
 ```
 
+### SSR development (test full pipeline locally)
+
+To run the full server-side rendering pipeline (Rails + Vite + SSR build watcher + Node SSR server), use the SSR launcher instead of the regular one:
+
+```powershell
+.\bin\dev-ssr.ps1
+```
+
+This builds the SSR bundle once, sets `INERTIA_SSR=1`, and starts everything via `Procfile.ssr.windows`. View source on a public page — the `<div id="app">` should contain real HTML, not be empty. Background jobs still run in-process via the `:async` adapter on Windows (no separate SolidQueue worker).
+
 ## Running Tests
 
 ```powershell

@@ -2,6 +2,38 @@
 
 Versions are numbered using the release date in `YYYY.MM.DD` format.
 
+## 2026.5.20 — Windows-compatible fork
+
+Repository forked to [`pokcay/build-new-windows`](https://github.com/pokcay/build-new-windows). All template logic now runs natively on Windows in addition to Unix/macOS. No application code (controllers, models, components) was changed — only setup, configuration, and developer-workflow files.
+
+Setup & launchers:
+
+- `bin/dev.ps1` PowerShell launcher for Rails + Vite (replaces `bin/dev` on Windows). Auto-kills stale processes on ports 3000 and 3036 before starting.
+- `bin/dev-ssr.ps1` PowerShell SSR launcher (builds SSR bundle, then runs Rails + Vite + SSR watcher + Node SSR server).
+- `Procfile.dev.windows` and `Procfile.ssr.windows` skip the SolidQueue worker process (SIGQUIT unsupported on Windows).
+- `bin/setup` auto-detects PostgreSQL install dir under `C:\Program Files\PostgreSQL\*`, adds it to the User PATH (persisted), starts the Windows service if stopped, and creates `.env` from `.env.example` with sensible defaults.
+- `bin/reset-postgres-auth.ps1` one-click script to switch local PostgreSQL to `trust` auth (UAC-elevated, backs up `pg_hba.conf`, restarts the service). For local development only.
+- `bin/setup` auto-triggers the reset script via UAC if the first connection attempt fails, then retries.
+
+Configuration:
+
+- Database name is derived from the project folder via `File.basename(Rails.root).gsub(/[^a-zA-Z0-9]/, "_").downcase` in `config/database.yml`. Override with `DATABASE_NAME`.
+- `DATABASE_HOST` default changed from `localhost` to `127.0.0.1` to avoid IPv6 `::1` issues with PostgreSQL on Windows.
+- `DATABASE_USER` default falls back to `ENV["USERNAME"]` (Windows) when `ENV["USER"]` is missing.
+- `sslmode: disable` and `gssencmode: disable` in the default block of `config/database.yml`. Fixes "server closed the connection unexpectedly" during libpq SSL/GSSAPI negotiation on Windows. Production unchanged when `DATABASE_URL` is used.
+- `Procfile.dev` now uses `ruby bin/...` prefix so Procfile commands work on both Windows (no shebang execution) and Unix.
+- `config/environments/development.rb` uses `:async` queue adapter on `Gem.win_platform?`, SolidQueue elsewhere. Background jobs run in-process inside the Rails server on Windows.
+- `dotenv-rails` gem added to `development, test` so `.env` is loaded at Rails boot.
+- `.gitattributes` enforces LF for source files, CRLF for `.ps1`/`.bat`/`.cmd`.
+- `.gitignore` keeps `.env.example` committed via `!/.env.example` exception.
+- `conductor.json` scripts updated to PowerShell-friendly invocations.
+
+Documentation:
+
+- `README.md` rewritten for Windows quick start with prerequisites table, dynamic-database explanation, and troubleshooting.
+- `CLAUDE.md` updated: dynamic database naming replaces `build_new_<env>` references, Commands section shows Unix vs Windows side by side, new "Platform notes (Windows)" section.
+- `.env.example` added as the credentials template.
+
 ## 2026.5.9
 
 - Switched the database from SQLite back to PostgreSQL. Single database at `build_new_<env>` is shared by Active Record and the Solid trifecta (Queue, Cache, Cable). Connection is configurable via `DATABASE_URL` or the `DATABASE_USER` / `DATABASE_PASSWORD` / `DATABASE_HOST` / `DATABASE_PORT` env vars.

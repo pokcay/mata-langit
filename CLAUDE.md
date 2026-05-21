@@ -4,23 +4,26 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Tech Stack
 
-Rails 8 + React 19 + PostgreSQL, bridged by **Inertia.js** (no separate API layer). TypeScript, Vite 7, Propshaft. Ruby 3.3.6.
+Rails 8 + React 19 + PostgreSQL, bridged by **Inertia.js** (no separate API layer). TypeScript, Vite 7, Propshaft. Ruby 3.3.6+ (see `.ruby-version` for the minimum; same major.minor with equal-or-higher patch is accepted by `bin/setup`).
 
 **Tailwind CSS v4** is wired up via `@tailwindcss/vite`. The app has a complete design system (tokens, primitives, dark-mode theming, the `cn()` utility, shared components under `app/frontend/components/`) — see the "Design system" section below and the live reference at `/admin/design-system`.
 
-Background jobs, caching, and WebSockets use the Rails 8 "Solid" trifecta (Solid Queue, Solid Cache, Solid Cable), all database-backed. **All four share the single PostgreSQL database** (`build_new_<env>` by default) — there are no separate cache/cable/queue databases, no `db/cache_schema.rb` / `db/cable_schema.rb` / `db/queue_schema.rb`, and `config/cache.yml` / `config/cable.yml` / `config/queue.yml` have no separate connection blocks. Override the connection via `DATABASE_URL` or the `DATABASE_USER` / `DATABASE_PASSWORD` / `DATABASE_HOST` / `DATABASE_PORT` env vars (see `config/database.yml`).
+Background jobs, caching, and WebSockets use the Rails 8 "Solid" trifecta (Solid Queue, Solid Cache, Solid Cable), all database-backed. **All four share a single PostgreSQL database** whose name is derived automatically from the project folder name (e.g. folder `my-app` → `my_app_development`, `my_app_test`, `my_app_production`). There are no separate cache/cable/queue databases, no `db/cache_schema.rb` / `db/cable_schema.rb` / `db/queue_schema.rb`, and `config/cache.yml` / `config/cable.yml` / `config/queue.yml` have no separate connection blocks. Override via `DATABASE_NAME` (base name), `DATABASE_URL` (full URL), or the `DATABASE_USER` / `DATABASE_PASSWORD` / `DATABASE_HOST` / `DATABASE_PORT` env vars (see `config/database.yml`).
 
 ## Commands
 
-```bash
-bin/setup              # Initial setup (bundle, db:prepare, start dev)
-bin/dev                # Dev server (Rails :3000 + Vite :3036)
-bin/rails test         # Minitest
-bin/rails test:system  # Capybara + headless Chrome
-npm run check          # TypeScript type checking
-bin/rubocop            # Ruby linting (rubocop-rails-omakase)
-bin/brakeman           # Security scanning
-```
+| Task | Unix/macOS | Windows (PowerShell) |
+|------|-----------|----------------------|
+| Initial setup (gems, db:prepare) | `bin/setup` | `ruby bin/setup` |
+| Dev server (Rails :3000 + Vite :3036) | `bin/dev` | `.\bin\dev.ps1` |
+| Dev server with SSR | `bin/dev-ssr` | `.\bin\dev-ssr.ps1` |
+| Minitest | `bin/rails test` | `ruby bin/rails test` |
+| System tests (Capybara + Chrome) | `bin/rails test:system` | `ruby bin/rails test:system` |
+| TypeScript type checking | `npm run check` | `npm run check` |
+| Ruby lint (rubocop-rails-omakase) | `bin/rubocop` | `ruby bin/rubocop` |
+| Security scan | `bin/brakeman` | `ruby bin/brakeman` |
+
+Windows note: scripts under `bin/` use a `#!/usr/bin/env ruby` shebang that Windows cannot execute directly. Prefix them with `ruby` (e.g. `ruby bin/rails ...`). The PowerShell launchers (`bin/dev.ps1`, `bin/dev-ssr.ps1`) wrap foreman with stale-port cleanup and don't need the prefix.
 
 ## Architecture
 
@@ -112,9 +115,9 @@ Inertia SSR is wired up so search engines and LLM crawlers (GPTBot, ClaudeBot, P
 - `vite.config.ts` — `ssr: { noExternal: true }` bundles all dependencies into the SSR output so the Node process boots without needing `node_modules` resolution at runtime.
 - `bin/vite build --ssr` produces `public/vite-ssr/ssr.js` (vite-plugin-ruby's default SSR output path); `bin/vite ssr` runs it.
 
-**Local SSR testing.** Run `bin/dev-ssr` instead of `bin/dev`. It builds the SSR bundle, sets `INERTIA_SSR=1`, and runs Rails + Vite + Solid Queue + an SSR build watcher + the Node SSR server together via `Procfile.ssr`. View source on a page — the `<div id="app">` should contain real markup, not an empty container.
+**Local SSR testing.** Run `bin/dev-ssr` (Unix/macOS) or `.\bin\dev-ssr.ps1` (Windows) instead of `bin/dev`. It builds the SSR bundle, sets `INERTIA_SSR=1`, and runs Rails + Vite + an SSR build watcher + the Node SSR server together via `Procfile.ssr` (Unix) or `Procfile.ssr.windows` (Windows). On Unix it also runs Solid Queue; on Windows jobs run in-process via the `:async` adapter. View source on a page — the `<div id="app">` should contain real markup, not an empty container.
 
-**SSR smoke test.** `bin/rails test test/integration/ssr_smoke_test.rb` builds the SSR bundle, boots the Node server, hits `/render`, and asserts non-empty markup. It also runs as part of `bin/rails test`. Use it to catch breakage from changes to entrypoints, shared providers, or anything imported during SSR.
+**SSR smoke test.** `bin/rails test test/integration/ssr_smoke_test.rb` (Unix) or `ruby bin/rails test test/integration/ssr_smoke_test.rb` (Windows) builds the SSR bundle, boots the Node server, hits `/render`, and asserts non-empty markup. It also runs as part of `bin/rails test`. Use it to catch breakage from changes to entrypoints, shared providers, or anything imported during SSR.
 
 Production deployment is host-specific (Render, Fly, Heroku, container, bare metal, etc.) and not prescribed here. The Inertia Rails renderer silently falls back to a client-only render if the SSR Node process is unreachable, so the smoke test is your guardrail — keep it green and the SSR pipeline works.
 
@@ -173,13 +176,54 @@ export default function Pricing() {
 
 `app/javascript/pages/Home.tsx` is the canonical example to copy from.
 
+## Platform notes (Windows)
+
+This is a Windows-compatible fork of the original macOS-centric template. All workflows now run natively on Windows in addition to Unix/macOS.
+
+| Topic | Unix/macOS | Windows |
+|-------|-----------|---------|
+| Dev launcher | `bin/dev` | `.\bin\dev.ps1` |
+| SSR dev launcher | `bin/dev-ssr` | `.\bin\dev-ssr.ps1` |
+| Setup invocation | `bin/setup` | `ruby bin/setup` |
+| Procfile (dev) | `Procfile.dev` | `Procfile.dev.windows` |
+| Procfile (SSR dev) | `Procfile.ssr` | `Procfile.ssr.windows` |
+| Background jobs (dev) | SolidQueue worker process | `:async` ActiveJob adapter in-process |
+
+**Setup automation.** `bin/setup` (a Ruby script, cross-platform) does the following when run on Windows:
+
+1. Verifies Ruby major.minor matches `.ruby-version` (patch can be newer)
+2. Checks Node.js and PostgreSQL are installed
+3. If PostgreSQL is not in PATH, scans `C:\Program Files\PostgreSQL\*\bin`, picks the newest, adds it to the User PATH (persisted), and to the current process PATH
+4. Starts the `postgresql-x64-*` Windows service if it's stopped (via `net start`)
+5. Creates `.env` from `.env.example` with defaults (`postgres` / empty password / `127.0.0.1` / `5432`) if `.env` doesn't exist; otherwise loads it
+6. Tests the PostgreSQL connection with `psql`. On failure, auto-spawns `bin/reset-postgres-auth.ps1` via UAC elevation to switch local `pg_hba.conf` to `trust` mode, then retries
+7. Runs `bundle check || bundle install`, `ruby bin/rails db:prepare`, `ruby bin/rails log:clear tmp:clear`
+
+**Dev launcher.** `bin/dev.ps1` kills any process listening on ports 3000 and 3036 before starting foreman with `Procfile.dev.windows`. This handles the case where foreman crashed ungracefully and left orphans behind.
+
+**Database config on Windows.** `config/database.yml` defaults `host` to `127.0.0.1` (avoids IPv6 `::1` issues with PostgreSQL on Windows) and sets `sslmode: disable` and `gssencmode: disable` in the default block (avoids "server closed the connection unexpectedly" during libpq SSL/GSSAPI negotiation). Production behavior is unchanged when `DATABASE_URL` is used.
+
+**ActiveJob adapter switch.** `config/environments/development.rb` uses:
+
+```ruby
+config.active_job.queue_adapter = Gem.win_platform? ? :async : :solid_queue
+```
+
+SolidQueue's supervisor needs POSIX signals (`SIGQUIT`, etc.) that Windows doesn't support. On Windows, jobs run in-process in the Rails server via `:async`. There's no separate `jobs` process in `Procfile.dev.windows`.
+
+**dotenv.** `dotenv-rails` is included in the `development, test` group so `.env` is loaded at Rails boot. The setup script also loads it directly for the `db:prepare` step.
+
+**Line endings.** `.gitattributes` enforces LF for source files and CRLF for `.ps1`/`.bat`/`.cmd`. The `.env.example` is kept committed (with an `!/.env.example` exception in `.gitignore`).
+
+**Troubleshooting auth issues.** If `bin/setup` cannot connect even after retry, run `.\bin\reset-postgres-auth.ps1` manually (right-click → Run as Administrator). It backs up `pg_hba.conf`, switches all `local` and `host 127.0.0.1/32` / `::1/128` entries from `scram-sha-256` / `md5` / `password` to `trust`, and restarts the PostgreSQL service. **Local development only — never run on production.**
+
 ## Conventions
 
 - Ruby: `rubocop-rails-omakase` style, `frozen_string_literal: true`
 - Tailwind CSS v4 + a complete design system (tokens, primitives, dark mode) — see the "Design system" section below and `/admin/design-system`
 - `ApplicationController` restricts to modern browsers
 - Inertia shared props: `current_user`, `flash`, `errors` on every page (see `@/types/inertia`)
-- PostgreSQL (database `build_new_<env>` by default) is the only database — Active Record + Solid Queue/Cache/Cable all share it
+- PostgreSQL is the only database — Active Record + Solid Queue/Cache/Cable all share it. The database name is derived from the project folder (e.g. folder `my-app` → `my_app_<env>`). Override via `DATABASE_NAME`.
 
 <!-- bm-design-system:start -->
 ## Design system
