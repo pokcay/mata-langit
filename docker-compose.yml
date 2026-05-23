@@ -1,0 +1,60 @@
+# Hostinger Docker Manager: deploy from
+#   https://github.com/pokcay/build-new-windows
+# Copy .env.docker.example → .env and set RAILS_MASTER_KEY before deploy.
+#
+# Services: PostgreSQL + Rails (web) + Inertia SSR (Node).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+      POSTGRES_DB: build_new_windows_production
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d build_new_windows_production"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  ssr:
+    build: .
+    entrypoint: ["node"]
+    command: ["public/vite-ssr/ssr.js"]
+    environment:
+      NODE_ENV: production
+    restart: unless-stopped
+
+  web:
+    build: .
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      RAILS_ENV: production
+      RAILS_MASTER_KEY: ${RAILS_MASTER_KEY:?Set RAILS_MASTER_KEY in .env}
+      DATABASE_URL: postgres://postgres:${DATABASE_PASSWORD:-postgres}@db:5432/build_new_windows_production
+      APP_HOST: ${APP_HOST:-localhost}
+      INERTIA_SSR: "1"
+      INERTIA_SSR_URL: http://ssr:13714
+      PORT: "3000"
+      RAILS_LOG_LEVEL: ${RAILS_LOG_LEVEL:-info}
+      # IP / Hostinger default URL (no custom domain yet): allow any Host header.
+      # Replace with a comma list (e.g. 203.0.113.5,yourdomain.com) when you have one.
+      RAILS_ALLOWED_HOSTS: ${RAILS_ALLOWED_HOSTS:-*}
+      # Direct http://IP:3000 access without TLS — set true once HTTPS + domain are ready.
+      FORCE_SSL: ${FORCE_SSL:-false}
+      ASSUME_SSL: ${ASSUME_SSL:-false}
+      MAIL_FROM: ${MAIL_FROM:-App <onboarding@resend.dev>}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      ssr:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

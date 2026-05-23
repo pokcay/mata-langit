@@ -25,10 +25,12 @@ Rails.application.configure do
   config.active_storage.service = :local
 
   # Assume all access to the app is happening through a SSL-terminating reverse proxy.
-  config.assume_ssl = true
+  config.assume_ssl = ActiveModel::Type::Boolean.new.cast(
+    ENV.fetch("ASSUME_SSL", ENV.fetch("FORCE_SSL", "true"))
+  )
 
   # Force all access to the app over SSL, use Strict-Transport-Security, and use secure cookies.
-  config.force_ssl = true
+  config.force_ssl = ActiveModel::Type::Boolean.new.cast(ENV.fetch("FORCE_SSL", "true"))
 
   # Skip http-to-https redirect for the default health check endpoint.
   # config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/up" } } }
@@ -74,6 +76,13 @@ Rails.application.configure do
   config.active_record.attributes_for_inspect = [ :id ]
 
   # Enable DNS rebinding protection and other `Host` header attacks.
+  if ENV["RAILS_ALLOWED_HOSTS"].present?
+    ENV["RAILS_ALLOWED_HOSTS"].split(",").each do |host|
+      host = host.strip
+      config.hosts << (host == "*" ? /.*/ : host)
+    end
+  end
+  #
   # config.hosts = [
   #   "example.com",     # Allow requests from example.com
   #   /.*\.example\.com/ # Allow requests from subdomains like `www.example.com`

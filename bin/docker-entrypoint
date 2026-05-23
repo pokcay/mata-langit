@@ -1,0 +1,15 @@
+#!/bin/bash -e
+
+cd /rails
+
+if [ -z "${RAILS_MASTER_KEY}" ] && [ ! -f config/master.key ]; then
+  echo "ERROR: RAILS_MASTER_KEY is required. Copy it from config/master.key on your dev machine."
+  exit 1
+fi
+
+if [ "${1}" = "./bin/rails" ] && [ "${2}" = "server" ]; then
+  rm -f tmp/pids/server.pid
+  ./bin/rails db:prepare
+fi
+
+exec "$@"

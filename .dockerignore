@@ -1,0 +1,46 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Dependencies (rebuilt in image)
+node_modules
+vendor/bundle
+
+# Local env and secrets
+.env
+.env.*
+!.env.example
+!.env.docker.example
+
+# Logs, temp, storage
+log/*
+tmp/*
+storage/*
+!log/.keep
+!tmp/.keep
+!storage/.keep
+
+# Dev artifacts (client/ssr bundles are produced during docker build)
+public/vite*
+public/assets
+
+# Docs / CI / editor
+README.md
+CHANGELOG.md
+CLAUDE.md
+docs
+.cursor
+.github
+tmp/screenshots
+
+# Windows-only scripts (not needed in Linux container)
+bin/*.ps1
+bin/reset-postgres-auth.ps1
+
+# Cloudflare worker (deploy separately)
+cloudflare-worker/node_modules
+
+# Test
+test
+coverage

@@ -115,7 +115,8 @@ $env:PARALLEL_WORKERS=1; ruby bin/rails test
 
 ## Deployment
 
-See [`docs/hatchbox-deployment-guide.md`](docs/hatchbox-deployment-guide.md) for Hatchbox setup including Resend, per-environment credentials, Cloudflare Email Routing, and the optional inbound-email Worker.
+- **Hatchbox:** [`docs/hatchbox-deployment-guide.md`](docs/hatchbox-deployment-guide.md) — Resend, credentials, Cloudflare Email Routing
+- **Hostinger VPS (Docker):** [`docs/hostinger-docker-deployment.md`](docs/hostinger-docker-deployment.md) — `docker-compose.yml` at repo root for Docker Manager
 
 ## Links
 
