@@ -192,6 +192,10 @@ FileUtils.chdir APP_ROOT do
   system("bundle check") || system!("bundle install")
 
   puts "\n== Preparing database =="
+  # On Windows the pg gem reports "server closed the connection unexpectedly"
+  # when the target database does not exist yet (instead of "database does not exist").
+  # db:create connects via postgres first; db:prepare then migrates safely.
+  system! "#{rails} db:create" if windows?
   system! "#{rails} db:prepare"
 
   puts "\n== Removing old logs and tempfiles =="
