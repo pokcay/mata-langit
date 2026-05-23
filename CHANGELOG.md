@@ -2,6 +2,12 @@
 
 Versions are numbered using the release date in `YYYY.MM.DD` format.
 
+## 2026.5.24 — Rebrand to mata-langit
+
+- Renamed app module to `MataLangit`, npm package to `mata-langit`, and UI branding to **Mata Langit**
+- Updated README, deployment docs, and Docker Compose comments to point at [`pokcay/mata-langit`](https://github.com/pokcay/mata-langit)
+- Production Docker database name: `mata_langit_production`
+
 ## 2026.5.24 — Admin inbox, email templates, Resend
 
 Back-ported production-ready admin and email infrastructure from a deployed app (generic, no business logic):
@@ -38,7 +44,7 @@ Back-ported production-ready admin and email infrastructure from a deployed app 
 
 ## 2026.5.20 — Windows-compatible fork
 
-Repository forked to [`pokcay/build-new-windows`](https://github.com/pokcay/build-new-windows). All template logic now runs natively on Windows in addition to Unix/macOS. No application code (controllers, models, components) was changed — only setup, configuration, and developer-workflow files.
+Repository forked from the Builder Methods Rails + React template. Windows-compatible setup now runs natively on Windows in addition to Unix/macOS. No application code (controllers, models, components) was changed — only setup, configuration, and developer-workflow files.
 
 Setup & launchers:
 
@@ -65,12 +71,12 @@ Configuration:
 Documentation:
 
 - `README.md` rewritten for Windows quick start with prerequisites table, dynamic-database explanation, and troubleshooting.
-- `CLAUDE.md` updated: dynamic database naming replaces `build_new_<env>` references, Commands section shows Unix vs Windows side by side, new "Platform notes (Windows)" section.
+- `CLAUDE.md` updated: dynamic database naming replaces fixed template database names, Commands section shows Unix vs Windows side by side, new "Platform notes (Windows)" section.
 - `.env.example` added as the credentials template.
 
 ## 2026.5.9
 
-- Switched the database from SQLite back to PostgreSQL. Single database at `build_new_<env>` is shared by Active Record and the Solid trifecta (Queue, Cache, Cable). Connection is configurable via `DATABASE_URL` or the `DATABASE_USER` / `DATABASE_PASSWORD` / `DATABASE_HOST` / `DATABASE_PORT` env vars.
+- Switched the database from SQLite back to PostgreSQL. Single database at `<folder_name>_<env>` (e.g. `mata_langit_development`) is shared by Active Record and the Solid trifecta (Queue, Cache, Cable). Connection is configurable via `DATABASE_URL` or the `DATABASE_USER` / `DATABASE_PASSWORD` / `DATABASE_HOST` / `DATABASE_PORT` env vars.
 - Added `admin` boolean column to users (default `false`) and an `/admin` namespace gated by `Admin::BaseController` (admins only). Added admin Users index + show pages and a Shield-icon Admin link in the user menu when `current_user.admin` is true.
 
 ## 2026.5.8

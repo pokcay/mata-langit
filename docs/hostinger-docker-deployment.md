@@ -1,6 +1,6 @@
 # Hostinger VPS — Docker deployment
 
-Deploy **build-new-windows** with Hostinger **Docker Manager** using the `docker-compose.yml` at the repo root.
+Deploy **mata-langit** with Hostinger **Docker Manager** using the `docker-compose.yml` at the repo root.
 
 ## What gets deployed
 
@@ -32,7 +32,7 @@ Solid Queue runs inside Puma — no separate worker container.
 ### Option A — Compose from URL (recommended after push)
 
 1. hPanel → VPS → **Docker Manager** → **Compose** → **Compose from URL**
-2. URL: `https://github.com/pokcay/build-new-windows`
+2. URL: `https://github.com/pokcay/mata-langit`
 3. Set environment variables in the panel (at minimum `RAILS_MASTER_KEY`)
 4. Deploy
 
@@ -65,8 +65,8 @@ Build can take **5–15 minutes** on a small VPS (Ruby gems + npm + Vite + SSR b
 ## SSH fallback
 
 ```bash
-git clone https://github.com/pokcay/build-new-windows.git
-cd build-new-windows
+git clone https://github.com/pokcay/mata-langit.git
+cd mata-langit
 cp .env.docker.example .env
 # edit .env — set RAILS_MASTER_KEY
 docker compose up -d --build

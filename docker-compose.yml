@@ -1,5 +1,5 @@
 # Hostinger Docker Manager: deploy from
-#   https://github.com/pokcay/build-new-windows
+#   https://github.com/pokcay/mata-langit
 # Copy .env.docker.example → .env and set RAILS_MASTER_KEY before deploy.
 #
 # Services: PostgreSQL + Rails (web) + Inertia SSR (Node).

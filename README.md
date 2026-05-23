@@ -1,10 +1,6 @@
-# Build New (Windows)
+# Mata Langit
 
-A blank-slate starter for full-stack apps with **Rails 8 + Inertia.js + React 19 + PostgreSQL** — by [Brian Casel](https://buildermethods.com) at Builder Methods.
-
-> This is a Windows-compatible fork of the original [build-new](https://github.com/buildermethods/build-new) template.
-
-📚 [**Full documentation**](https://buildermethods.com/rails-react-template)
+Full-stack app built with **Rails 8 + Inertia.js + React 19 + PostgreSQL**.
 
 ## Prerequisites
 
@@ -23,8 +19,8 @@ Install these before running setup:
 The same 5 commands work on a fresh machine **and** on a machine already configured — `bin/setup` handles every difference automatically.
 
 ```powershell
-git clone https://github.com/pokcay/build-new-windows.git my-project
-cd my-project
+git clone https://github.com/pokcay/mata-langit.git
+cd mata-langit
 ruby bin/setup     # auto-detect, configure, migrate
 npm install
 .\bin\dev.ps1      # http://localhost:3000
@@ -50,8 +46,8 @@ The database name is automatically derived from your **project folder name**.
 
 | Folder name | Database names |
 |-------------|----------------|
+| `mata-langit` | `mata_langit_development`, `mata_langit_test`, `mata_langit_production` |
 | `my-app` | `my_app_development`, `my_app_test`, `my_app_production` |
-| `cool_project` | `cool_project_development`, `cool_project_test`, `cool_project_production` |
 
 Override via `DATABASE_NAME` in `.env`.
 
@@ -117,12 +113,6 @@ $env:PARALLEL_WORKERS=1; ruby bin/rails test
 
 - **Hatchbox:** [`docs/hatchbox-deployment-guide.md`](docs/hatchbox-deployment-guide.md) — Resend, credentials, Cloudflare Email Routing
 - **Hostinger VPS (Docker):** [`docs/hostinger-docker-deployment.md`](docs/hostinger-docker-deployment.md) — `docker-compose.yml` at repo root for Docker Manager
-
-## Links
-
-- 💬 Direct support: [Builder Methods Pro](https://buildermethods.com/pro)
-- 📬 Free weekly newsletter: [Builder Briefing](https://buildermethods.com)
-- 🔗 Original repo: [buildermethods/build-new](https://github.com/buildermethods/build-new)
 
 ## License
 

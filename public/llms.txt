@@ -1,7 +1,6 @@
-# App Name
+# Mata Langit
 
-> One-sentence description of what this app does and who it's for.
-> Replace the heading and tagline above when forking this template.
+> Mata Langit — Rails 8 + Inertia.js + React app.
 
 This file follows the llms.txt convention (https://llmstxt.org). It gives
 LLM crawlers a curated, plain-text map of the public site so they can
