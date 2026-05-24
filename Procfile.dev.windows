@@ -1,2 +1,3 @@
 web: ruby bin/rails s
 vite: ruby bin/vite dev
+jobs: bundle exec good_job start

@@ -72,3 +72,9 @@ gem "resend"
 
 # Markdown → HTML for email templates
 gem "kramdown"
+
+# Streaming xlsx parser for large timeseries Excel files
+gem "creek"
+
+# Database-backed background jobs that work on Windows (replaces :async adapter)
+gem "good_job", "~> 4.0"

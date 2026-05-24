@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Home, Inbox, LayoutDashboard, Mail, Palette, Users } from "lucide-react"
+import { Home, Inbox, LayoutDashboard, Mail, Palette, Table2, Users } from "lucide-react"
 import { usePage } from "@inertiajs/react"
 import { MainNav, type NavItemDef } from "@/components/MainNav"
 import type { PageProps } from "@/types/inertia"
@@ -33,6 +33,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       label: "Inbox",
       match: (url) => url.startsWith("/admin/inbox"),
       badge: unreadCount > 0 ? String(unreadCount) : undefined,
+    },
+    {
+      href: "/admin/timeseries/uploads",
+      icon: Table2,
+      label: "Timeseries",
+      match: (url) => url.startsWith("/admin/timeseries"),
     },
     {
       href: "/admin/email-templates",

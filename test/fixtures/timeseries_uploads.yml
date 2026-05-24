@@ -1,0 +1,42 @@
+pending:
+  user: admin
+  filename: "Report Time Series (Regular) - Region (Jakarta 1) - 2025-01.xlsx"
+  region: "Jkt1"
+  period_year: 2025
+  period_month: 1
+  schema_version: "standard_2025"
+  status: "pending"
+  replaced_row_count: 0
+
+processing:
+  user: admin
+  filename: "Report Time Series (Regular) - Region (RegBar) - 2025-02.xlsx"
+  region: "RegBar"
+  period_year: 2025
+  period_month: 2
+  schema_version: "standard_2025"
+  status: "processing"
+  replaced_row_count: 0
+
+completed:
+  user: admin
+  filename: "Report Time Series (Regular) - Region (RegCen) - 2025-03.xlsx"
+  region: "RegCen"
+  period_year: 2025
+  period_month: 3
+  schema_version: "standard_2025"
+  status: "completed"
+  row_count: 100
+  netto_wise_sum: "5000.0000"
+  replaced_row_count: 0
+  imported_at: 2025-03-15 10:00:00
+
+cancelled:
+  user: admin
+  filename: "Report Time Series (Regular) - Region (RegTim) - 2025-04.xlsx"
+  region: "RegTim"
+  period_year: 2025
+  period_month: 4
+  schema_version: "standard_2025"
+  status: "cancelled"
+  replaced_row_count: 0

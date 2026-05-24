@@ -57,10 +57,15 @@ Rails.application.configure do
   # Highlight code that enqueued background job in logs.
   config.active_job.verbose_enqueue_logs = true
 
-  # Background job adapter: SolidQueue on Unix-like systems, :async on Windows.
-  # SolidQueue's supervisor process uses SIGQUIT/SIGTERM which Windows doesn't
-  # support, so on Windows we run jobs in-process inside the Rails server.
-  config.active_job.queue_adapter = Gem.win_platform? ? :async : :solid_queue
+  # Background job adapter: SolidQueue on Unix-like, GoodJob on Windows.
+  # SolidQueue's supervisor needs POSIX signals Windows doesn't support.
+  # GoodJob runs as a separate process (see Procfile.dev.windows) using threads,
+  # so heavy import jobs don't block the web server.
+  config.active_job.queue_adapter = Gem.win_platform? ? :good_job : :solid_queue
+
+  # GoodJob config (Windows only): external mode = separate process via Procfile.
+  config.good_job.execution_mode = :external if Gem.win_platform?
+  config.good_job.max_threads = 3 if Gem.win_platform?
 
   # Raises error for missing translations.
   # config.i18n.raise_on_missing_translations = true

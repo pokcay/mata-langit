@@ -13,7 +13,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       href: "/dashboard",
       icon: Home,
       label: "Home",
-      match: (url) => url === "/" || url.startsWith("/dashboard"),
+      match: (url: string) => url === "/" || url.startsWith("/dashboard"),
     },
     ...(isAdmin
       ? [
@@ -21,7 +21,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             href: "/admin",
             icon: Shield,
             label: "Admin",
-            match: (url) => url.startsWith("/admin"),
+            match: (url: string) => url.startsWith("/admin"),
           },
         ]
       : []),

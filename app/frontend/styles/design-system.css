@@ -48,6 +48,12 @@
   --color-danger-display: oklch(82% 0.18 22);
 }
 
+@keyframes progress-slide {
+  0%   { transform: translateX(-100%); }
+  60%  { transform: translateX(200%); }
+  100% { transform: translateX(200%); }
+}
+
 @layer base {
   html {
     background-color: var(--color-page);

@@ -29,6 +29,13 @@ Rails.application.routes.draw do
         patch :bulk_update
       end
     end
+
+    namespace :timeseries do
+      resources :uploads, only: %i[ index create ] do
+        collection { post :preview }
+        member     { patch :cancel }
+      end
+    end
   end
 
   get   "profile",          to: "profiles#details",          as: :profile
@@ -36,6 +43,7 @@ Rails.application.routes.draw do
   patch "profile/email",    to: "profiles#update_email"
   patch "profile/password", to: "profiles#update_password"
 
+  mount ActionCable.server => "/cable"
   mount LetterOpenerWeb::Engine, at: "/letter_opener" if Rails.env.development?
 
   get "up" => "rails/health#show", as: :rails_health_check
