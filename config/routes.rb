@@ -15,7 +15,7 @@ Rails.application.routes.draw do
   get "settings",  to: "settings#show",  as: :settings
 
   namespace :admin do
-    root to: redirect("/admin/users")
+    root to: "dashboard#show"
     get "design-system", to: "design_system#show", as: :design_system
     resources :users, only: %i[ index show ]
     resources :email_templates, path: "email-templates", only: %i[ index show update ] do

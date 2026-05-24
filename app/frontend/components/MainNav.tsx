@@ -115,7 +115,7 @@ export function MainNav({
       <button
         type="button"
         onClick={() => setMobileOpen(true)}
-        className="fixed right-3 top-3 z-30 inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-hairline bg-page text-ink-body hover:bg-surface lg:hidden"
+        className="fixed left-3 top-3 z-30 inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-hairline bg-page text-ink-body hover:bg-surface lg:hidden"
         aria-label="Open navigation"
       >
         <Menu className="h-4 w-4" />
@@ -137,12 +137,7 @@ function RailBody({
 }) {
   return (
     <>
-      <div
-        className={cn(
-          "flex h-14 shrink-0 items-center gap-3 border-b border-hairline px-3",
-          open ? "justify-between" : "justify-center",
-        )}
-      >
+      <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-hairline px-3">
         <Link
           href={brandHref}
           className="flex min-w-0 items-center gap-2 text-ink-display no-underline"
@@ -169,10 +164,8 @@ function RailBody({
         )}
       </div>
 
-      <RailNav open={open} items={items} />
-
       {!open && (
-        <div className="border-t border-hairline p-2">
+        <div className="border-b border-hairline p-2">
           <button
             type="button"
             onClick={onToggle}
@@ -183,6 +176,8 @@ function RailBody({
           </button>
         </div>
       )}
+
+      <RailNav open={open} items={items} />
 
       <div className="border-t border-hairline p-2">
         <UserMenu open={open} />
@@ -334,11 +329,14 @@ function UserMenu({ open }: { open: boolean }) {
         </div>
         <DropdownMenuSeparator />
         {isAdmin && (
-          <DropdownMenuItem asChild>
-            <Link href="/admin/users" className="no-underline">
-              <Shield /> Admin
-            </Link>
-          </DropdownMenuItem>
+          <>
+            <DropdownMenuItem asChild>
+              <Link href="/admin" className="no-underline">
+                <Shield /> Admin area
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
         )}
         <DropdownMenuItem
           onSelect={(event) => {

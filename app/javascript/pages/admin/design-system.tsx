@@ -1,4 +1,5 @@
 import { Head } from "@inertiajs/react";
+import { AdminShell } from "@/components/AdminShell";
 import { DesignSystem } from "@/components/design-system/DesignSystem";
 
 export default function AdminDesignSystem() {
@@ -15,7 +16,9 @@ export default function AdminDesignSystem() {
           content="Internal reference for every visual primitive in this app — colors, typography, structure, base styles, and elements."
         />
       </Head>
-      <DesignSystem />
+      <AdminShell>
+        <DesignSystem />
+      </AdminShell>
     </>
   );
 }

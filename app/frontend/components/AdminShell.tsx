@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Home, Inbox, Mail, Palette, Users } from "lucide-react"
+import { Home, Inbox, LayoutDashboard, Mail, Palette, Users } from "lucide-react"
 import { usePage } from "@inertiajs/react"
 import { MainNav, type NavItemDef } from "@/components/MainNav"
 import type { PageProps } from "@/types/inertia"
@@ -14,6 +14,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       icon: Home,
       label: "App Home",
       match: () => false,
+    },
+    {
+      href: "/admin",
+      icon: LayoutDashboard,
+      label: "Dashboard",
+      match: (url) => url === "/admin" || url === "/admin/",
     },
     {
       href: "/admin/users",
@@ -44,8 +50,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-page text-ink-body">
-      <MainNav items={adminNavItems} brandHref="/admin/users" />
-      <main className="min-w-0 flex-1 px-6 py-8 sm:px-10">
+      <MainNav items={adminNavItems} brandHref="/admin" />
+      <main className="min-w-0 flex-1 px-6 pb-8 pt-16 sm:px-10 lg:py-8">
         <div className="mx-auto max-w-4xl">{children}</div>
       </main>
     </div>
