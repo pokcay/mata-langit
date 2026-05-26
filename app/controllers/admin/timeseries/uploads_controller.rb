@@ -48,50 +48,64 @@ class Admin::Timeseries::UploadsController < Admin::BaseController
     available_regions = TimeseriesUpload.distinct.pluck(:region).sort
     available_years   = TimeseriesUpload.distinct.pluck(:period_year).sort.reverse
 
+    # Sanitise return_to to relative paths only
+    raw_return_to     = params[:return_to].presence
+    safe_return_to    = raw_return_to&.then { |u| u.start_with?("/") && !u.start_with?("//") && !u.include?("://") ? u : nil }
+    integrity_outcome = params[:integrity_outcome].presence
+
     render inertia: "admin/timeseries/Uploads", props: {
-      uploads:           uploads.map { |u| serialize(u) },
-      total:             total,
-      page:              page,
-      per_page:          PER_PAGE,
-      sort:              sort_key,
-      direction:         dir.downcase,
-      filters:           {
+      uploads:            uploads.map { |u| serialize(u) },
+      total:              total,
+      page:               page,
+      per_page:           PER_PAGE,
+      sort:               sort_key,
+      direction:          dir.downcase,
+      filters:            {
         region: params[:region].presence,
         year:   params[:year].presence,
         month:  params[:month].presence,
         status: params[:status].presence,
         search: params[:search].presence,
       },
-      available_regions: available_regions,
-      available_years:   available_years,
+      available_regions:  available_regions,
+      available_years:    available_years,
+      integrity_return_to: safe_return_to,
+      integrity_outcome:   integrity_outcome,
     }
   end
 
   # POST /admin/timeseries/uploads/preview
-  # Accepts one or more files, returns preview info per file. No DB writes.
+  # Accepts JSON metadata (parsed browser-side). No file upload, no Excel reading.
+  # Body: { files_metadata: [{ filename, row_count, netto_wise_sum }, ...] }
   def preview
-    files = Array(params[:files])
-    return render json: { error: "No files provided" }, status: :unprocessable_entity if files.empty?
+    files_metadata = Array(params[:files_metadata])
+    return render json: { error: "No files provided" }, status: :unprocessable_entity if files_metadata.empty?
 
-    results = files.map do |file|
-      validate_file!(file)
-      info = TimeseriesFileParser.preview(file.tempfile.path, file.original_filename)
-      scope = TimeseriesTransaction.for_period(info[:region], info[:period_year], info[:period_month])
+    results = files_metadata.map do |meta|
+      filename       = meta[:filename].to_s
+      row_count      = meta[:row_count].to_i
+      netto_wise_sum = meta[:netto_wise_sum].to_f
+
+      info = TimeseriesFileParser.parse_filename(filename)
+      scope          = TimeseriesTransaction.for_period(info[:region], info[:period_year], info[:period_month])
       existing_count = scope.count
       existing_netto = scope.sum(:netto_wise)
+
       info.merge(
-        filename: file.original_filename,
-        existing_row_count: existing_count,
+        filename:               filename,
+        row_count:              row_count,
+        netto_wise_sum:         netto_wise_sum,
+        existing_row_count:     existing_count,
         existing_netto_wise_sum: existing_netto.to_f,
-        will_replace: existing_count > 0,
-        is_unchanged: existing_count > 0 &&
-                      existing_count == info[:row_count] &&
-                      existing_netto.round(4) == info[:netto_wise_sum].to_d.round(4)
+        will_replace:           existing_count > 0,
+        is_unchanged:           existing_count > 0 &&
+                                existing_count == row_count &&
+                                existing_netto.round(4) == netto_wise_sum.to_d.round(4)
       )
     rescue ArgumentError => e
-      { filename: file.original_filename, error: e.message }
+      { filename: meta[:filename].to_s, error: e.message }
     rescue => e
-      { filename: file.original_filename, error: "Parse error: #{e.message}" }
+      { filename: meta[:filename].to_s, error: "Error: #{e.message}" }
     end
 
     render json: results
@@ -155,6 +169,52 @@ class Admin::Timeseries::UploadsController < Admin::BaseController
     else
       render json: { queued: queued, upload_ids: upload_ids }, status: :created
     end
+  end
+
+  # DELETE /admin/timeseries/uploads/:id
+  def destroy
+    upload = TimeseriesUpload.find(params[:id])
+
+    # Prevent deleting a job that is actively running
+    if upload.in_flight?
+      return redirect_back(
+        fallback_location: admin_timeseries_uploads_path,
+        alert: "Upload \"#{upload.filename}\" sedang diproses. Batalkan dulu sebelum menghapus."
+      )
+    end
+
+    upload.file.purge_later
+    upload.destroy!
+
+    redirect_to admin_timeseries_uploads_path(
+      region: params[:region], sort: params[:sort], direction: params[:direction],
+      year: params[:year], month: params[:month], status: params[:status], page: params[:page]
+    ), notice: "Upload berhasil dihapus."
+  end
+
+  # DELETE /admin/timeseries/uploads/bulk_destroy
+  def bulk_destroy
+    ids = Array(params[:ids]).map(&:to_i).reject(&:zero?)
+    uploads = TimeseriesUpload.where(id: ids)
+
+    in_flight, deletable = uploads.partition(&:in_flight?)
+
+    deletable.each do |u|
+      u.file.purge_later
+      u.destroy!
+    end
+
+    notice_parts = []
+    notice_parts << "#{deletable.size} upload dihapus." if deletable.any?
+    if in_flight.any?
+      notice_parts << "#{in_flight.size} upload dilewati karena sedang diproses (batalkan dulu)."
+    end
+    notice_parts << "Tidak ada upload yang dihapus." if notice_parts.empty?
+
+    redirect_to admin_timeseries_uploads_path(
+      region: params[:region], sort: params[:sort], direction: params[:direction],
+      year: params[:year], month: params[:month], status: params[:status], page: params[:page]
+    ), notice: notice_parts.join(" ")
   end
 
   # PATCH /admin/timeseries/uploads/:id/cancel

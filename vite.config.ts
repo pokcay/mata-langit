@@ -40,6 +40,7 @@ export default defineConfig({
       maxParallelFileOps: 10,
       output: {
         manualChunks(id) {
+          if (id.includes('node_modules/fflate')) return 'fflate'
           if (id.includes('node_modules/@milkdown')) return 'milkdown'
           if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) return 'react-vendor'
           if (id.includes('node_modules/@radix-ui')) return 'radix'

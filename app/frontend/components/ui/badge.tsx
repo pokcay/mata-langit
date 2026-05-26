@@ -11,6 +11,8 @@ const badgeVariants = cva("badge", {
       signal: "badge-signal",
       muted: "badge-muted",
       solid: "badge-solid",
+      success: "badge-success",
+      danger: "badge-danger",
     },
   },
   defaultVariants: {

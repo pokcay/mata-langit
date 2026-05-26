@@ -3,13 +3,17 @@
 class TimeseriesImportJob < ApplicationJob
   queue_as :default
 
-  # Only one import job per region+period may run at a time.
-  limits_concurrency \
-    key: -> {
-      upload = TimeseriesUpload.find(arguments[0])
-      "ts-import-#{upload.region}-#{upload.period_year}-#{upload.period_month}"
-    },
-    to: 1
+  # Serialize imports via a Postgres advisory lock taken inside the transaction
+  # (see #perform). Each XLSX load pulls ~1 GB of decompressed worksheet XML
+  # into Ruby strings, so running 3 in parallel exhausted memory.
+  #
+  # We previously used GoodJob's `good_job_control_concurrency_with
+  # perform_limit: 1`, but it reschedules excess jobs with exponential backoff
+  # rather than queuing them FIFO — after a busy burst, the next jobs got
+  # pushed 15+ minutes into the future and the queue effectively stalled.
+  # `pg_advisory_xact_lock` blocks instead, so threads picked up in parallel
+  # cheaply wait for their turn and process in arrival order.
+  ADVISORY_LOCK_KEY = 0x7473696D70727401 # ASCII for "ts-impr" + version byte
 
   def perform(upload_id)
     upload = TimeseriesUpload.find(upload_id)
@@ -36,54 +40,70 @@ class TimeseriesImportJob < ApplicationJob
     row_count  = 0
     netto_sum  = BigDecimal("0")
 
-    ActiveRecord::Base.transaction do
-      # Count and delete existing rows for this region+period inside the transaction
-      # so a rollback (on cancel) fully restores the original records.
-      replaced = TimeseriesTransaction
-                   .for_period(upload.region, upload.period_year, upload.period_month)
-                   .where.not(timeseries_upload_id: upload.id)
-                   .count
-      TimeseriesTransaction
-        .for_period(upload.region, upload.period_year, upload.period_month)
-        .where.not(timeseries_upload_id: upload.id)
-        .delete_all
+    # Silence ActiveRecord SQL logging for the hot import loop: each batch is
+    # an INSERT of ~1000 rows × 90 columns, which serializes to megabytes of
+    # log output per batch. Streaming that to STDOUT was the dominant cost in
+    # the worker — far slower than the actual parse + insert.
+    ActiveRecord::Base.logger.silence do
+      ActiveRecord::Base.transaction do
+        # Block until no other import is in flight. Auto-released at COMMIT or
+        # ROLLBACK, so a crashed worker doesn't leak the lock.
+        ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{ADVISORY_LOCK_KEY})")
 
-      TimeseriesFileParser.each_batch(file_path, upload.filename, upload_id: upload.id) do |batch|
-        TimeseriesTransaction.insert_all(batch)
-        batch.each do |row|
-          row_count += 1
-          netto_sum += BigDecimal(row[:netto_wise].to_s) if row[:netto_wise]
+        # Count and delete existing rows for this region+period inside the transaction
+        # so a rollback (on cancel) fully restores the original records.
+        replaced = TimeseriesTransaction
+                     .for_period(upload.region, upload.period_year, upload.period_month)
+                     .where.not(timeseries_upload_id: upload.id)
+                     .count
+        TimeseriesTransaction
+          .for_period(upload.region, upload.period_year, upload.period_month)
+          .where.not(timeseries_upload_id: upload.id)
+          .delete_all
+
+        TimeseriesFileParser.each_batch(file_path, upload.filename, upload_id: upload.id) do |batch|
+          TimeseriesTransaction.insert_all(batch)
+          batch.each do |row|
+            row_count += 1
+            netto_sum += BigDecimal(row[:netto_wise].to_s) if row[:netto_wise]
+          end
+
+          broadcast_progress(upload, row_count)
+
+          # Check for a cancellation signal committed by the cancel endpoint.
+          upload.reload
+          if upload.cancelled?
+            cancelled_during_import = true
+            raise ActiveRecord::Rollback
+          end
         end
 
-        broadcast_progress(upload, row_count)
+        # Only reached (and committed) when import completes without cancellation.
+        upload.update!(
+          status:            "completed",
+          row_count:         row_count,
+          netto_wise_sum:    netto_sum,
+          replaced_row_count: replaced,
+          imported_at:       Time.current
+        )
 
-        # Check for a cancellation signal committed by the cancel endpoint.
-        upload.reload
-        if upload.cancelled?
-          cancelled_during_import = true
-          raise ActiveRecord::Rollback
-        end
+        # Remove stale upload records for the same region+period (their transactions
+        # were already deleted above). Skip pending/processing records — those are
+        # newer jobs that should run after us; they self-cancel if they find their
+        # status was flipped by the create action.
+        TimeseriesUpload
+          .where(region: upload.region, period_year: upload.period_year, period_month: upload.period_month)
+          .where.not(id: upload.id)
+          .where.not(status: %w[pending processing])
+          .destroy_all
       end
-
-      # Only reached (and committed) when import completes without cancellation.
-      upload.update!(
-        status:            "completed",
-        row_count:         row_count,
-        netto_wise_sum:    netto_sum,
-        replaced_row_count: replaced,
-        imported_at:       Time.current
-      )
-
-      # Remove stale upload records for the same region+period (their transactions
-      # were already deleted above). Skip pending/processing records — those are
-      # newer jobs that should run after us; they self-cancel if they find their
-      # status was flipped by the create action.
-      TimeseriesUpload
-        .where(region: upload.region, period_year: upload.period_year, period_month: upload.period_month)
-        .where.not(id: upload.id)
-        .where.not(status: %w[pending processing])
-        .destroy_all
     end
+
+    # Data is now in timeseries_transactions; the source XLSX is redundant.
+    # Purge after the transaction commits so a rollback (cancel) keeps the file
+    # available for retry. Failed/cancelled uploads keep the file for debugging
+    # or manual re-import.
+    upload.file.purge_later if upload.completed?
 
     broadcast(upload.reload)
   rescue => e

@@ -1,14 +1,19 @@
 import * as React from "react"
 import { Head, router } from "@inertiajs/react"
+import { parseXlsxForPreview } from "@/lib/xlsxPreviewParser"
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   ArrowUpDown,
   Ban,
   CheckCircle2,
   Clock,
   FileSpreadsheet,
+  FolderOpen,
+  Info,
   Loader2,
+  Trash2,
   Upload,
   XCircle,
 } from "lucide-react"
@@ -23,6 +28,10 @@ import { consumer } from "@/lib/actioncable"
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+type WorkerFileResult =
+  | { filename: string; row_count: number; netto_wise_sum: number }
+  | { filename: string; error: string }
 
 type UploadStatus = "pending" | "processing" | "completed" | "failed" | "cancelled"
 
@@ -109,6 +118,8 @@ export default function AdminTimeseriesUploads({
   filters,
   available_regions,
   available_years,
+  integrity_return_to,
+  integrity_outcome,
 }: {
   uploads: UploadRow[]
   total: number
@@ -119,12 +130,18 @@ export default function AdminTimeseriesUploads({
   filters: Filters
   available_regions: string[]
   available_years: number[]
+  integrity_return_to?: string | null
+  integrity_outcome?: string | null
 }) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const folderInputRef = React.useRef<HTMLInputElement>(null)
   const activeXhrRef = React.useRef<XMLHttpRequest | null>(null)
+  const serverAbortRef = React.useRef<AbortController | null>(null)
+  const cancelledRef = React.useRef(false)
+
   const [previews, setPreviews] = React.useState<PreviewResult[] | null>(null)
-  const [previewLoading, setPreviewLoading] = React.useState(false)
-  const [previewUploadProgress, setPreviewUploadProgress] = React.useState<number | null>(null)
+  const [workerProgress, setWorkerProgress] = React.useState<{ total: number; done: number } | null>(null)
+  const [serverQuerying, setServerQuerying] = React.useState(false)
   const [importFiles, setImportFiles] = React.useState<File[]>([])
   const [importing, setImporting] = React.useState(false)
   const [uploadProgress, setUploadProgress] = React.useState<number | null>(null)
@@ -132,6 +149,7 @@ export default function AdminTimeseriesUploads({
   const [checkedFiles, setCheckedFiles] = React.useState<Set<string>>(new Set())
   const [trackedUploads, setTrackedUploads] = React.useState<TrackedUpload[]>([])
   const [searchValue, setSearchValue] = React.useState(filters.search ?? "")
+  const [selectedIds, setSelectedIds] = React.useState<Set<number>>(new Set())
 
   // Sync search input when URL changes (browser back/forward)
   React.useEffect(() => {
@@ -172,6 +190,55 @@ export default function AdminTimeseriesUploads({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackedUploads.map((u) => u.id).join(",")])
 
+  // Mirror the server-rendered history list into local state so WebSocket
+  // events for in-flight rows can update the table without a page refresh.
+  const [liveUploads, setLiveUploads] = React.useState<UploadRow[]>(uploads)
+  React.useEffect(() => {
+    setLiveUploads(uploads)
+  }, [uploads])
+
+  // Subscribe to TimeseriesUploadChannel for each pending/processing row in
+  // the visible history. When a row hits a terminal status it falls out of
+  // this list and the effect resubscribes with the remaining IDs.
+  const liveInFlightKey = React.useMemo(
+    () =>
+      liveUploads
+        .filter((u) => u.status === "pending" || u.status === "processing")
+        .map((u) => u.id)
+        .sort((a, b) => a - b)
+        .join(","),
+    [liveUploads]
+  )
+
+  React.useEffect(() => {
+    if (!liveInFlightKey) return
+    const ids = liveInFlightKey.split(",").map((s) => parseInt(s, 10))
+    const subs = ids.map((id) =>
+      consumer.subscriptions.create(
+        { channel: "TimeseriesUploadChannel", upload_id: id },
+        {
+          received(data: StatusUpdate | ProgressUpdate) {
+            if (data.type !== "status_update") return
+            setLiveUploads((prev) =>
+              prev.map((u) =>
+                u.id === data.upload_id
+                  ? {
+                      ...u,
+                      status: data.status,
+                      row_count: data.row_count ?? u.row_count,
+                      netto_wise_sum: data.netto_wise_sum ?? u.netto_wise_sum,
+                      error_message: data.error_message ?? u.error_message,
+                    }
+                  : u
+              )
+            )
+          },
+        }
+      )
+    )
+    return () => subs.forEach((s) => s.unsubscribe())
+  }, [liveInFlightKey])
+
   // -------------------------------------------------------------------------
   // Navigation helper (URL-based state)
   // -------------------------------------------------------------------------
@@ -190,8 +257,74 @@ export default function AdminTimeseriesUploads({
       if (v !== null && v !== undefined && v !== "") params[k] = v as string | number
       else delete params[k]
     })
+    setSelectedIds(new Set())
     router.get("/admin/timeseries/uploads", params as Record<string, string>, {
       preserveScroll: false,
+    })
+  }
+
+  // -------------------------------------------------------------------------
+  // Bulk selection / delete
+  // -------------------------------------------------------------------------
+
+  // Uploads from the current session are rendered in the "Progress Import"
+  // panel above; suppress them from the history table to avoid showing the
+  // same row twice. Once the user navigates/refreshes, trackedUploads clears
+  // and the history table becomes the single source of truth.
+  const trackedIds = React.useMemo(
+    () => new Set(trackedUploads.map((u) => u.id)),
+    [trackedUploads],
+  )
+
+  const visibleUploads = React.useMemo(
+    () => liveUploads.filter((u) => !trackedIds.has(u.id)),
+    [liveUploads, trackedIds],
+  )
+
+  const deletableUploads = React.useMemo(
+    () => visibleUploads.filter((u) => u.status !== "pending" && u.status !== "processing"),
+    [visibleUploads],
+  )
+
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === deletableUploads.length && deletableUploads.length > 0) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(deletableUploads.map((u) => u.id)))
+    }
+  }
+
+  function handleBulkDelete() {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    if (
+      !window.confirm(
+        `Hapus ${ids.length} upload terpilih?\n\nSemua data transaksi untuk periode-periode ini juga akan dihapus.`,
+      )
+    ) {
+      return
+    }
+    const data: Record<string, string | number | (string | number)[]> = { ids }
+    if (filters.region) data.region = filters.region
+    if (filters.year)   data.year   = filters.year
+    if (filters.month)  data.month  = filters.month
+    if (filters.status) data.status = filters.status
+    if (filters.search) data.search = filters.search
+    if (sort !== "created_at") data.sort = sort
+    if (direction !== "desc")  data.direction = direction
+    if (page > 1) data.page = page
+    router.delete("/admin/timeseries/uploads/bulk_destroy", {
+      data,
+      onFinish: () => setSelectedIds(new Set()),
     })
   }
 
@@ -211,28 +344,76 @@ export default function AdminTimeseriesUploads({
     if (!files || files.length === 0) return
     const xlsx = Array.from(files).filter((f) => f.name.endsWith(".xlsx"))
     if (xlsx.length === 0) return
-    runPreview(xlsx)
+    startWorkerPreview(xlsx)
   }
 
-  async function runPreview(files: File[]) {
-    setPreviewLoading(true)
-    setPreviewUploadProgress(0)
-    setPreviews(null)
+  async function startWorkerPreview(files: File[]) {
+    cancelledRef.current = false
     setImportFiles(files)
+    setPreviews(null)
+    setWorkerProgress({ total: files.length, done: 0 })
 
-    const fd = new FormData()
-    files.forEach((f) => fd.append("files[]", f))
+    const collected: WorkerFileResult[] = []
+
+    for (const file of files) {
+      if (cancelledRef.current) return
+      try {
+        const { rowCount, nettoSum } = await parseXlsxForPreview(file)
+        collected.push({ filename: file.name, row_count: rowCount, netto_wise_sum: nettoSum })
+      } catch (err) {
+        collected.push({ filename: file.name, error: err instanceof Error ? err.message : "Gagal membaca file" })
+      }
+      if (cancelledRef.current) return
+      setWorkerProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : null)
+    }
+
+    if (!cancelledRef.current) await runServerPreview(collected, files)
+  }
+
+  async function runServerPreview(workerResults: WorkerFileResult[], originalFiles: File[]) {
+    setWorkerProgress(null)
+    setServerQuerying(true)
+
+    const abortController = new AbortController()
+    serverAbortRef.current = abortController
 
     try {
-      const data = await xhrPost<PreviewResult[]>(
-        "/admin/timeseries/uploads/preview",
-        fd,
-        (pct) => setPreviewUploadProgress(pct)
-      )
-      setPreviews(data)
-      // New files checked by default; duplicates unchecked (require explicit opt-in)
+      const metadata = workerResults.map((r) => ({
+        filename: r.filename,
+        row_count: "row_count" in r ? r.row_count : 0,
+        netto_wise_sum: "row_count" in r ? r.netto_wise_sum : 0,
+      }))
+
+      const resp = await fetch("/admin/timeseries/uploads/preview", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": getCsrfToken(),
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({ files_metadata: metadata }),
+        signal: abortController.signal,
+      })
+
+      if (cancelledRef.current) return
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}))
+        throw new Error((err as { error?: string }).error ?? `HTTP ${resp.status}`)
+      }
+
+      const serverResults: PreviewResult[] = await resp.json()
+      const serverMap = new Map(serverResults.map((p) => [p.filename, p]))
+
+      const finalPreviews: PreviewResult[] = workerResults.map((r) => {
+        if ("error" in r) return { filename: r.filename, error: r.error }
+        return serverMap.get(r.filename) ?? { filename: r.filename, error: "Tidak ada hasil dari server" }
+      })
+
+      if (cancelledRef.current) return
+      setPreviews(finalPreviews)
+
       const initialChecked = new Set(
-        data
+        finalPreviews
           .filter(
             (p): p is Exclude<PreviewResult, { error: string }> =>
               !("error" in p) && !p.will_replace
@@ -240,12 +421,24 @@ export default function AdminTimeseriesUploads({
           .map((p) => p.filename)
       )
       setCheckedFiles(initialChecked)
-    } catch {
-      setPreviews(files.map((f) => ({ filename: f.name, error: "Network error" })))
+    } catch (err) {
+      if (cancelledRef.current || (err instanceof DOMException && err.name === "AbortError")) return
+      setPreviews(originalFiles.map((f) => ({ filename: f.name, error: "Network error" })))
     } finally {
-      setPreviewLoading(false)
-      setPreviewUploadProgress(null)
+      serverAbortRef.current = null
+      if (!cancelledRef.current) setServerQuerying(false)
     }
+  }
+
+  function handleCancelPreviewInProgress() {
+    cancelledRef.current = true
+    serverAbortRef.current?.abort()
+    serverAbortRef.current = null
+    setWorkerProgress(null)
+    setServerQuerying(false)
+    setImportFiles([])
+    if (fileInputRef.current) fileInputRef.current.value = ""
+    if (folderInputRef.current) folderInputRef.current.value = ""
   }
 
   function handleAbortImport() {
@@ -253,6 +446,14 @@ export default function AdminTimeseriesUploads({
     activeXhrRef.current = null
     setImporting(false)
     setUploadProgress(null)
+  }
+
+  function handleCancelPreview() {
+    setPreviews(null)
+    setImportFiles([])
+    setCheckedFiles(new Set())
+    if (fileInputRef.current) fileInputRef.current.value = ""
+    if (folderInputRef.current) folderInputRef.current.value = ""
   }
 
   async function handleConfirmImport() {
@@ -292,13 +493,6 @@ export default function AdminTimeseriesUploads({
       setImporting(false)
       setUploadProgress(null)
     }
-  }
-
-  function handleCancelPreview() {
-    setPreviews(null)
-    setImportFiles([])
-    setCheckedFiles(new Set())
-    if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
   async function handleCancelUpload(id: number) {
@@ -364,6 +558,17 @@ export default function AdminTimeseriesUploads({
         <meta property="og:description" content="Upload and manage timeseries Excel files." />
       </Head>
       <AdminShell>
+        {/* Data Integrity deeplink banner */}
+        {integrity_return_to && (
+          <IntegrityBanner
+            region={filters.region}
+            year={filters.year}
+            month={filters.month}
+            outcome={integrity_outcome}
+            returnTo={integrity_return_to}
+          />
+        )}
+
         {/* Header */}
         <div className="border-b border-hairline pb-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -373,14 +578,24 @@ export default function AdminTimeseriesUploads({
             </div>
             {!isInProgressView && (
               <>
-                <Button
-                  variant="primary"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={previewLoading || importing}
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload File
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="primary"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={!!workerProgress || serverQuerying || importing}
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload File
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => folderInputRef.current?.click()}
+                    disabled={!!workerProgress || serverQuerying || importing}
+                  >
+                    <FolderOpen className="mr-2 h-4 w-4" />
+                    Pilih Folder
+                  </Button>
+                </div>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -389,13 +604,21 @@ export default function AdminTimeseriesUploads({
                   className="hidden"
                   onChange={(e) => handleFilesSelected(e.target.files)}
                 />
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => handleFilesSelected(e.target.files)}
+                  {...{ webkitdirectory: "", mozdirectory: "" } as React.InputHTMLAttributes<HTMLInputElement>}
+                />
               </>
             )}
           </div>
         </div>
 
         {/* Drop zone (visible only when idle) */}
-        {!isInProgressView && !previews && !previewLoading && (
+        {!isInProgressView && !previews && !workerProgress && !serverQuerying && (
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
             onDragLeave={() => setDragOver(false)}
@@ -407,7 +630,7 @@ export default function AdminTimeseriesUploads({
           >
             <FileSpreadsheet className="mb-3 h-10 w-10 text-ink-muted" />
             <p className="text-sm font-medium text-ink-display">
-              Drag &amp; drop file .xlsx ke sini
+              Drag &amp; drop file .xlsx ke sini, atau pilih folder
             </p>
             <p className="mt-1 text-xs text-ink-muted">
               Format: <code>Report Time Series (Regular) - Region (...) - YYYY-MM_....xlsx</code>
@@ -418,27 +641,37 @@ export default function AdminTimeseriesUploads({
           </div>
         )}
 
-        {/* Preview loading with upload progress */}
-        {previewLoading && (
+        {/* Worker progress — browser parsing files one by one */}
+        {workerProgress && (
           <div className="mt-8 space-y-3">
-            {previewUploadProgress !== null && previewUploadProgress < 100 ? (
-              <>
-                <p className="text-center text-sm text-ink-muted">
-                  Mengirim file… {previewUploadProgress}%
-                </p>
-                <ProgressBar value={previewUploadProgress} />
-              </>
-            ) : (
-              <div className="flex items-center justify-center gap-2 text-ink-muted">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-ink-muted">
                 <Loader2 className="h-5 w-5 animate-spin" />
-                <span>Membaca file…</span>
+                <span className="text-sm">
+                  Membaca file… {workerProgress.done}/{workerProgress.total}
+                </span>
               </div>
-            )}
+              <Button variant="ghost" size="sm" onClick={handleCancelPreviewInProgress}>
+                <Ban className="mr-1 h-3 w-3" />
+                Batal
+              </Button>
+            </div>
+            <ProgressBar value={Math.round((workerProgress.done / workerProgress.total) * 100)} />
+          </div>
+        )}
+
+        {/* Server querying — duplicate check (fast, no file upload) */}
+        {serverQuerying && (
+          <div className="mt-8 flex flex-col items-center gap-3">
+            <div className="flex items-center gap-2 text-ink-muted">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-sm">Mengambil info duplikat…</span>
+            </div>
           </div>
         )}
 
         {/* Preview panel */}
-        {!isInProgressView && previews && !previewLoading && (
+        {!isInProgressView && previews && !serverQuerying && (
           <div className="mt-6">
             <h2 className="mb-1">Preview Import</h2>
             <p className="mb-4 text-sm text-ink-muted">
@@ -624,6 +857,26 @@ export default function AdminTimeseriesUploads({
             )}
           </div>
 
+          {/* Bulk action bar */}
+          {selectedIds.size > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-hairline bg-surface px-3 py-2">
+              <span className="text-xs text-ink-muted">{selectedIds.size} dipilih</span>
+              <Button variant="ghost" size="sm" type="button" onClick={handleBulkDelete}>
+                <Trash2 className="mr-1 h-3 w-3" />
+                Hapus terpilih
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                className="ml-auto"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Batal pilih
+              </Button>
+            </div>
+          )}
+
           {/* Table */}
           {uploads.length === 0 ? (
             <p className="text-sm text-ink-muted">
@@ -636,6 +889,17 @@ export default function AdminTimeseriesUploads({
               <table className="w-full text-sm">
                 <thead className="bg-surface">
                   <tr>
+                    <th className="w-10 px-3 py-2.5">
+                      <Checkbox
+                        checked={
+                          deletableUploads.length > 0 &&
+                          selectedIds.size === deletableUploads.length
+                        }
+                        onChange={toggleSelectAll}
+                        aria-label="Pilih semua"
+                        disabled={deletableUploads.length === 0}
+                      />
+                    </th>
                     <th className="px-4 py-2.5 text-left font-medium text-ink-muted">File</th>
                     <SortableHeader
                       col="region" label="Region"
@@ -661,11 +925,20 @@ export default function AdminTimeseriesUploads({
                       col="created_at" label="Waktu"
                       sort={sort} direction={direction} onSort={handleSortColumn}
                     />
+                    <th className="w-10 px-2 py-2.5" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-hairline">
-                  {uploads.map((u) => (
-                    <UploadTableRow key={u.id} upload={u} />
+                  {visibleUploads.map((u) => (
+                    <UploadTableRow
+                      key={u.id}
+                      upload={u}
+                      filters={filters}
+                      sort={sort}
+                      direction={direction}
+                      selected={selectedIds.has(u.id)}
+                      onToggleSelect={() => toggleSelect(u.id)}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -945,9 +1218,46 @@ function ProgressCard({
   )
 }
 
-function UploadTableRow({ upload }: { upload: UploadRow }) {
+function UploadTableRow({
+  upload,
+  filters,
+  sort,
+  direction,
+  selected,
+  onToggleSelect,
+}: {
+  upload: UploadRow
+  filters: Filters
+  sort: string
+  direction: string
+  selected: boolean
+  onToggleSelect: () => void
+}) {
+  const canDelete = upload.status !== "pending" && upload.status !== "processing"
+
+  function handleDelete() {
+    if (!window.confirm(`Hapus "${upload.filename}"?\n\nSemua data transaksi untuk periode ini juga akan dihapus.`)) return
+    const params: Record<string, string> = {}
+    if (filters.region) params.region = filters.region
+    if (filters.year) params.year = filters.year
+    if (filters.month) params.month = filters.month
+    if (filters.status) params.status = filters.status
+    if (filters.search) params.search = filters.search
+    if (sort !== "created_at") params.sort = sort
+    if (direction !== "desc") params.direction = direction
+    router.delete(`/admin/timeseries/uploads/${upload.id}`, { data: params })
+  }
+
   return (
     <tr>
+      <td className="px-3 py-3">
+        <Checkbox
+          checked={selected}
+          onChange={onToggleSelect}
+          disabled={!canDelete}
+          aria-label={`Pilih ${upload.filename}`}
+        />
+      </td>
       <td className="max-w-[200px] truncate px-4 py-3 font-medium text-ink-display" title={upload.filename}>
         {upload.filename}
       </td>
@@ -966,6 +1276,17 @@ function UploadTableRow({ upload }: { upload: UploadRow }) {
         {upload.imported_at
           ? formatDate(upload.imported_at)
           : formatDate(upload.created_at)}
+      </td>
+      <td className="px-2 py-3">
+        {canDelete && (
+          <button
+            onClick={handleDelete}
+            title="Hapus upload ini"
+            className="rounded p-1 text-ink-muted transition-colors hover:text-red-600"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
       </td>
     </tr>
   )
@@ -989,15 +1310,15 @@ function StatusBadge({ status }: { status: UploadStatus }) {
       )
     case "completed":
       return (
-        <Badge tone="signal">
+        <Badge tone="success">
           <CheckCircle2 className="mr-1 h-3 w-3" />
           Completed
         </Badge>
       )
     case "failed":
       return (
-        <Badge tone="neutral">
-          <XCircle className="mr-1 h-3 w-3 text-red-500" />
+        <Badge tone="danger">
+          <XCircle className="mr-1 h-3 w-3" />
           Failed
         </Badge>
       )
@@ -1091,4 +1412,61 @@ const MONTHS = [
 ]
 function monthName(m: number): string {
   return MONTHS[m] ?? String(m)
+}
+
+// ---------------------------------------------------------------------------
+// IntegrityBanner — shown when navigating from a Data Integrity mismatch row
+// ---------------------------------------------------------------------------
+
+function IntegrityBanner({
+  region,
+  year,
+  month,
+  outcome,
+  returnTo,
+}: {
+  region: string | null
+  year: string | null
+  month: string | null
+  outcome: string | null | undefined
+  returnTo: string
+}) {
+  const periodLabel = [
+    month ? MONTHS[parseInt(month, 10)] : null,
+    year,
+  ].filter(Boolean).join(" ") || null
+
+  const isExtraInDb = outcome === "extra_in_db"
+
+  return (
+    <div className="mb-6 flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950">
+      <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+      <div className="flex-1 text-sm">
+        {isExtraInDb ? (
+          <p className="text-ink-display">
+            Verifikasi: data untuk Region{" "}
+            {region && <strong>{region}</strong>}
+            {periodLabel && <> periode <strong>{periodLabel}</strong></>}{" "}
+            ada di database tapi tidak ada di SoT. Pertimbangkan apakah upload
+            Timeseries-nya valid atau perlu diperbaiki.
+          </p>
+        ) : (
+          <p className="text-ink-display">
+            Anda sedang memperbaiki Region{" "}
+            {region && <strong>{region}</strong>}
+            {periodLabel && <> untuk periode <strong>{periodLabel}</strong></>}.{" "}
+            Upload file Timeseries yang sesuai. Setelah selesai, kembali ke Data
+            Integrity dan jalankan ulang check.
+          </p>
+        )}
+        <a
+          href={returnTo}
+          className="mt-1 inline-flex items-center gap-1 text-xs text-amber-700 underline hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100"
+        >
+          <ArrowLeft className="h-3 w-3" />
+          Kembali ke Data Integrity
+        </a>
+      </div>
+    </div>
+  )
 }

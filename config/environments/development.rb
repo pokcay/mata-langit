@@ -67,6 +67,22 @@ Rails.application.configure do
   config.good_job.execution_mode = :external if Gem.win_platform?
   config.good_job.max_threads = 3 if Gem.win_platform?
 
+  # When running as the GoodJob worker process (Procfile.dev.windows sets
+  # GOOD_JOB_WORKER=1), log to STDOUT only and at :info instead of :debug.
+  # Two reasons:
+  #   1. Rails 8 defaults `log_file_size` to 100 MB, so both `web` and `jobs`
+  #      would race to rotate log/development.log on Windows — producing
+  #      "log shifting failed / log writing failed. closed stream" loops.
+  #   2. SQL queries log at :debug. For batch imports that INSERT ~1000 rows
+  #      × 90 columns, that's megabytes of text per batch streamed to STDOUT.
+  #      Foreman buffers it line-by-line, blocking the worker thread.
+  # Foreman picks up STDOUT and prefixes each line with `jobs.1 |`, so the
+  # remaining :info-level logs (job start/finish, errors) stay readable.
+  if ENV["GOOD_JOB_WORKER"] == "1"
+    config.logger    = ActiveSupport::TaggedLogging.logger(STDOUT)
+    config.log_level = :info
+  end
+
   # Raises error for missing translations.
   # config.i18n.raise_on_missing_translations = true
 

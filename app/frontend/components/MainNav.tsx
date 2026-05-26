@@ -1,6 +1,7 @@
 import * as React from "react"
 import { Link, router, usePage } from "@inertiajs/react"
 import {
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   Home,
@@ -34,7 +35,18 @@ export type NavItemDef = {
   badge?: string
 }
 
-const DEFAULT_NAV_ITEMS: NavItemDef[] = [
+export type NavGroupDef = {
+  type: "group"
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  storageKey: string
+  matchGroup: (url: string) => boolean
+  children: NavItemDef[]
+}
+
+export type NavEntry = NavItemDef | NavGroupDef
+
+const DEFAULT_NAV_ITEMS: NavEntry[] = [
   {
     href: "/dashboard",
     icon: Home,
@@ -61,7 +73,7 @@ export function MainNav({
   items = DEFAULT_NAV_ITEMS,
   brandHref = "/dashboard",
 }: {
-  items?: NavItemDef[]
+  items?: NavEntry[]
   brandHref?: string
 } = {}) {
   const [open, setOpen] = useMainNavOpen()
@@ -78,6 +90,7 @@ export function MainNav({
         <RailBody
           open={open}
           onToggle={() => setOpen(!open)}
+          onExpandSidebar={() => setOpen(true)}
           items={items}
           brandHref={brandHref}
         />
@@ -127,12 +140,14 @@ export function MainNav({
 function RailBody({
   open,
   onToggle,
+  onExpandSidebar,
   items,
   brandHref,
 }: {
   open: boolean
   onToggle: () => void
-  items: NavItemDef[]
+  onExpandSidebar: () => void
+  items: NavEntry[]
   brandHref: string
 }) {
   return (
@@ -177,7 +192,7 @@ function RailBody({
         </div>
       )}
 
-      <RailNav open={open} items={items} />
+      <RailNav open={open} items={items} onExpandSidebar={onExpandSidebar} />
 
       <div className="border-t border-hairline p-2">
         <UserMenu open={open} />
@@ -190,10 +205,12 @@ function RailNav({
   open,
   items,
   onClose,
+  onExpandSidebar,
 }: {
   open: boolean
-  items: NavItemDef[]
+  items: NavEntry[]
   onClose?: () => void
+  onExpandSidebar?: () => void
 }) {
   const { url } = usePage()
   return (
@@ -203,19 +220,139 @@ function RailNav({
         open ? "overflow-x-hidden overflow-y-auto" : "overflow-visible",
       )}
     >
-      {items.map((item) => (
-        <NavItem
-          key={item.href}
-          href={item.href}
-          icon={item.icon}
-          label={item.label}
-          badge={item.badge}
-          active={item.match(url)}
-          open={open}
-          onClick={onClose}
-        />
-      ))}
+      {items.map((item) =>
+        "type" in item && item.type === "group" ? (
+          <NavGroup
+            key={item.storageKey}
+            group={item}
+            currentUrl={url}
+            open={open}
+            onExpandSidebar={onExpandSidebar}
+            onClose={onClose}
+          />
+        ) : (
+          <NavItem
+            key={(item as NavItemDef).href}
+            href={(item as NavItemDef).href}
+            icon={(item as NavItemDef).icon}
+            label={(item as NavItemDef).label}
+            badge={(item as NavItemDef).badge}
+            active={(item as NavItemDef).match(url)}
+            open={open}
+            onClick={onClose}
+          />
+        )
+      )}
     </nav>
+  )
+}
+
+function NavGroup({
+  group,
+  currentUrl,
+  open,
+  onExpandSidebar,
+  onClose,
+}: {
+  group: NavGroupDef
+  currentUrl: string
+  open: boolean
+  onExpandSidebar?: () => void
+  onClose?: () => void
+}) {
+  const isGroupActive = group.matchGroup(currentUrl)
+  const [expanded, setExpanded] = React.useState<boolean>(isGroupActive)
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    const stored = window.localStorage.getItem(group.storageKey)
+    if (stored !== null) {
+      setExpanded(stored === "true")
+    } else {
+      setExpanded(isGroupActive)
+    }
+  // Only run on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    window.localStorage.setItem(group.storageKey, String(expanded))
+  }, [group.storageKey, expanded])
+
+  // Auto-expand group when navigating to a child route
+  React.useEffect(() => {
+    if (isGroupActive && !expanded) setExpanded(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUrl])
+
+  const Icon = group.icon
+
+  if (!open) {
+    return (
+      <div className="group/nav-item relative">
+        <button
+          type="button"
+          aria-label={group.label}
+          onClick={onExpandSidebar}
+          className={cn(
+            "mx-auto flex h-9 w-9 cursor-pointer items-center justify-center rounded-md",
+            isGroupActive
+              ? "bg-accent-faded text-accent-display"
+              : "text-ink-body hover:bg-surface hover:text-ink-display",
+          )}
+        >
+          <Icon className="h-4 w-4 shrink-0" />
+        </button>
+        <span
+          role="tooltip"
+          className="pointer-events-none absolute left-full top-1/2 z-50 ml-[13px] -translate-y-1/2 whitespace-nowrap rounded-md border border-hairline bg-page px-2 py-1 text-xs font-medium text-ink-display opacity-0 shadow-sm transition-opacity group-hover/nav-item:opacity-100"
+        >
+          {group.label}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className={cn(
+          "flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm",
+          isGroupActive && !expanded
+            ? "text-accent-display hover:bg-accent-faded"
+            : "text-ink-muted hover:bg-surface hover:text-ink-display",
+        )}
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        <span className="flex-1 truncate text-left">{group.label}</span>
+        <ChevronDown
+          className={cn(
+            "h-3 w-3 shrink-0 transition-transform duration-200",
+            expanded ? "rotate-0" : "-rotate-90",
+          )}
+        />
+      </button>
+
+      {expanded && (
+        <div className="ml-3 mt-0.5 flex flex-col gap-0.5 border-l border-hairline pl-3">
+          {group.children.map((child) => (
+            <NavItem
+              key={child.href}
+              href={child.href}
+              icon={child.icon}
+              label={child.label}
+              badge={child.badge}
+              active={child.match(currentUrl)}
+              open={open}
+              onClick={onClose}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

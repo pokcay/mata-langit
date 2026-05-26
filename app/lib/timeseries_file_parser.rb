@@ -23,7 +23,8 @@ class TimeseriesFileParser
     "RegBar"                    => "RegBar",
     "RegCen"                    => "RegCen",
     "RegTim"                    => "RegTim",
-    "Wipro Unza Indonesia ECOM" => "Ecom"
+    "Wipro Unza Indonesia ECOM" => "Ecom",
+    "E-Com"                     => "Ecom"
   }.freeze
 
   # Maps Excel header → DB column symbol for each schema.
@@ -188,72 +189,92 @@ class TimeseriesFileParser
       "Region yang dikenal: #{REGION_NAME_MAP.keys.join(', ')}."
   end
 
-  # Streaming preview: reads the whole file once and returns row_count + netto_wise_sum.
-  # Also returns detected headers for validation.
-  def self.preview(file_path, filename)
-    require "creek"
-    meta = parse_filename(filename)
-    col_map = build_column_map(meta[:schema_version].to_sym)
-
-    row_count    = 0
-    netto_sum    = 0.0
-    letter_map   = nil  # column-letter → db_sym
-
-    ::Creek::Book.new(file_path, with_headers: false).sheets.first.rows.each_with_index do |row, idx|
-      if idx == 0
-        letter_map = build_letter_map(row, col_map)
-        next
-      end
-
-      next if row_all_blank?(row)
-      row_count += 1
-
-      norm = normalize_row(row)
-      netto_col = letter_map.key(:netto_wise)
-      netto_sum += to_decimal(norm[netto_col]) if netto_col
-    end
-
-    meta.merge(row_count: row_count, netto_wise_sum: netto_sum.round(4))
-  end
-
   # Yields batches of hashes ready for insert_all.
+  # Uses ZIP + string scanning instead of Creek — 10–100× faster for large files.
   # batch_size: number of rows per batch.
   def self.each_batch(file_path, filename, upload_id:, batch_size: 1000)
-    require "creek"
+    require "zip"
+
     meta = parse_filename(filename)
-    col_map   = build_column_map(meta[:schema_version].to_sym)
+    col_map = build_column_map(meta[:schema_version].to_sym)
     base_attrs = {
       timeseries_upload_id: upload_id,
-      region:       meta[:region],
-      period_year:  meta[:period_year],
-      period_month: meta[:period_month]
+      region:               meta[:region],
+      period_year:          meta[:period_year],
+      period_month:         meta[:period_month]
     }
 
-    letter_map = nil
-    batch = []
-
-    ::Creek::Book.new(file_path, with_headers: false).sheets.first.rows.each_with_index do |row, idx|
-      if idx == 0
-        letter_map = build_letter_map(row, col_map)
-        next
+    Zip::File.open(file_path) do |zip|
+      # ── 1. Build shared strings table ──────────────────────────────────────
+      shared_strings = []
+      ss_entry = zip.find_entry("xl/sharedStrings.xml")
+      if ss_entry
+        ss_xml = ss_entry.get_input_stream.read.force_encoding("UTF-8")
+        shared_strings = ss_xml.split("<si>").drop(1).map do |part|
+          part.scan(/<t(?:[^>]*)>(.*?)<\/t>/m).map(&:first).join
+        end
       end
 
-      next if row_all_blank?(row)
+      # ── 2. Read worksheet XML ───────────────────────────────────────────────
+      ws_entry = zip.find_entry("xl/worksheets/sheet1.xml") ||
+                 zip.select { |e| e.name.match?(%r{xl/worksheets/sheet\d+\.xml}) }.min_by(&:name)
+      raise ArgumentError, "No worksheet found in #{filename}" unless ws_entry
 
-      norm = normalize_row(row)
-      row_attrs = base_attrs.dup
-      letter_map.each do |letter, db_col|
-        row_attrs[db_col] = cast_value(db_col, norm[letter], col_map)
+      ws_xml    = ws_entry.get_input_stream.read.force_encoding("UTF-8")
+      row_parts = ws_xml.split("<row ")
+
+      # ── 3. Build column letter → DB column map from header row ─────────────
+      letter_map = {}
+      if row_parts.size > 1
+        end_idx        = row_parts[1].index("</row>") || row_parts[1].length
+        header_content = row_parts[1][0, end_idx]
+        header_content.split("<c ").drop(1).each do |cell_xml|
+          col_letter = cell_xml[/r="([A-Z]+)\d+"/, 1]
+          next unless col_letter
+          col_name = xlsx_cell_string(cell_xml, shared_strings)
+          next unless col_name
+          db_col = col_map[col_name.strip]
+          letter_map[col_letter] = db_col if db_col
+        end
       end
 
-      batch << row_attrs
-      if batch.size >= batch_size
-        yield batch
-        batch = []
+      # Build a template row containing every DB column found in the header,
+      # initialized to nil. insert_all requires all hashes in a batch to share
+      # exactly the same keys, so each row must start from this same template.
+      row_template = base_attrs.dup
+      letter_map.each_value { |db_col| row_template[db_col] = nil }
+
+      # ── 4. Stream data rows ─────────────────────────────────────────────────
+      batch = []
+
+      row_parts.drop(2).each do |row_part|
+        end_idx     = row_part.index("</row>") || row_part.length
+        row_content = row_part[0, end_idx]
+        # Skip blank rows: no <v> and no inline string value
+        next unless row_content.include?("<v>") || row_content.include?("<is>")
+
+        row_attrs = row_template.dup
+
+        row_content.split("<c ").drop(1).each do |cell_xml|
+          col_letter = cell_xml[/r="([A-Z]+)\d+"/, 1]
+          next unless col_letter
+          db_col = letter_map[col_letter]
+          next unless db_col
+
+          raw = xlsx_cell_value(cell_xml, shared_strings)
+          next if raw.nil?
+          row_attrs[db_col] = cast_import_value(db_col, raw)
+        end
+
+        batch << row_attrs
+        if batch.size >= batch_size
+          yield batch
+          batch = []
+        end
       end
+
+      yield batch unless batch.empty?
     end
-
-    yield batch unless batch.empty?
   end
 
   # -------------------------------------------------------------------------
@@ -276,54 +297,58 @@ class TimeseriesFileParser
   end
   private_class_method :build_column_map
 
-  # Strip row-number suffix from creek cell refs: {"AN2" => val} → {"AN" => val}
-  def self.normalize_row(row)
-    row.transform_keys { |k| k.to_s.gsub(/\d+\z/, "") }
-  end
-  private_class_method :normalize_row
-
-  # Build a map from column letter (e.g. "A") → db_col symbol.
-  # row is a hash like { "A1" => "Region Name", "B1" => "Area Name", ... }
-  def self.build_letter_map(header_row, col_map)
-    result = {}
-    header_row.each do |cell_ref, header_value|
-      next unless header_value.is_a?(String)
-      letter = cell_ref.to_s.gsub(/\d/, "")
-      db_col = col_map[header_value.strip]
-      result[letter] = db_col if db_col
-    end
-    result
-  end
-  private_class_method :build_letter_map
-
   DATE_COLUMNS = %i[date_transaction report_so_date].freeze
 
-  def self.cast_value(db_col, raw, _col_map)
-    return nil if raw.nil? || raw.to_s.strip.empty?
-
-    if DATE_COLUMNS.include?(db_col)
-      case raw
-      when Date, DateTime, Time then raw.to_date
-      when Numeric              then Date.new(1899, 12, 30) + raw.to_i
-      else
-        begin Date.parse(raw.to_s) rescue nil end
-      end
-    elsif raw.is_a?(Numeric)
-      raw
-    else
-      raw.to_s.strip.presence
+  # Extract a string value from a cell XML fragment, supporting all XLSX string formats:
+  #   t="s"          → shared string (look up in shared_strings array)
+  #   t="inlineStr"  → inline string (<is><t>text</t></is>)
+  #   t="str"        → formula result string (<v>text</v>)
+  # Returns nil for numeric/blank cells.
+  def self.xlsx_cell_string(cell_xml, shared_strings)
+    if cell_xml.include?('t="s"')
+      idx = cell_xml[/<v>(\d+)<\/v>/, 1]
+      idx ? shared_strings[idx.to_i] : nil
+    elsif cell_xml.include?('t="inlineStr"')
+      cell_xml[/<t(?:[^>]*)>(.*?)<\/t>/m, 1]
+    elsif cell_xml.include?('t="str"')
+      cell_xml[/<v>([^<]*)<\/v>/, 1]
     end
   end
-  private_class_method :cast_value
+  private_class_method :xlsx_cell_string
 
-  def self.to_decimal(val)
-    return 0.0 if val.nil?
-    val.is_a?(Numeric) ? val.to_f : val.to_s.gsub(/[^\d.\-]/, "").to_f
+  # Extract a cell value for any type (string or numeric).
+  # Returns the raw string for shared/inline/formula strings, or the <v> content for numerics.
+  def self.xlsx_cell_value(cell_xml, shared_strings)
+    if cell_xml.include?('t="inlineStr"')
+      cell_xml[/<t(?:[^>]*)>(.*?)<\/t>/m, 1]
+    elsif cell_xml.include?('t="s"')
+      idx = cell_xml[/<v>(\d+)<\/v>/, 1]
+      idx ? shared_strings[idx.to_i] : nil
+    elsif cell_xml.include?('t="str"')
+      cell_xml[/<v>([^<]*)<\/v>/, 1]
+    else
+      cell_xml[/<v>([^<]*)<\/v>/, 1]
+    end
   end
-  private_class_method :to_decimal
+  private_class_method :xlsx_cell_value
 
-  def self.row_all_blank?(row)
-    row.values.all? { |v| v.nil? || v.to_s.strip.empty? }
+  # Cast a raw string value from XLSX XML to the appropriate Ruby type.
+  # Shared-string cells arrive as Ruby strings; numeric cells arrive as numeric strings.
+  def self.cast_import_value(db_col, raw)
+    return nil if raw.nil? || raw.to_s.strip.empty?
+    val = raw.to_s.strip
+
+    if DATE_COLUMNS.include?(db_col)
+      if val.match?(/\A[\d.]+\z/)
+        Date.new(1899, 12, 30) + val.to_f.to_i
+      else
+        begin Date.parse(val) rescue nil end
+      end
+    elsif val.match?(/\A[+-]?[\d]+(?:\.[\d]+)?(?:[Ee][+-]?[\d]+)?\z/)
+      val.to_f
+    else
+      val.presence
+    end
   end
-  private_class_method :row_all_blank?
+  private_class_method :cast_import_value
 end

@@ -2,7 +2,12 @@ class Admin::BaseController < ApplicationController
   before_action :require_admin
 
   inertia_share do
-    { admin_inbox_unread_count: InboundEmail.unread.count }
+    latest = IntegrityCheck.where(status: "completed").order(checked_at: :desc).first
+    mismatch_count = latest ? latest.mismatched_count.to_i + latest.missing_in_db_count.to_i : 0
+    {
+      admin_inbox_unread_count:       InboundEmail.unread.count,
+      data_integrity_mismatch_count:  mismatch_count,
+    }
   end
 
   private

@@ -76,5 +76,8 @@ gem "kramdown"
 # Streaming xlsx parser for large timeseries Excel files
 gem "creek"
 
+# xlsx file generation for Data Integrity export
+gem "caxlsx", require: "axlsx"
+
 # Database-backed background jobs that work on Windows (replaces :async adapter)
 gem "good_job", "~> 4.0"
