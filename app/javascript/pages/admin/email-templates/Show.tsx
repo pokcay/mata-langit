@@ -1,11 +1,12 @@
 import * as React from "react"
 import { Head, Link, router, usePage } from "@inertiajs/react"
 import { marked } from "marked"
-import { ChevronDown } from "lucide-react"
+import { ArrowLeft, ChevronDown } from "lucide-react"
 import { AdminShell } from "@/components/AdminShell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { MobileStickyActionBar } from "@/components/ui/mobile-sticky-action-bar"
 import { RichTextField, type RichTextFieldHandle } from "@/components/ui/rich-text-field"
 import {
   Dialog,
@@ -194,8 +195,15 @@ export default function AdminEmailTemplateShow() {
       <AdminShell>
         {/* Header */}
         <div className="border-b border-hairline pb-6">
+          <Link
+            href="/admin/email-templates"
+            className="-ml-2 mb-1 inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-sm text-ink-muted no-underline hover:text-ink-display sm:hidden"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            All templates
+          </Link>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <h1>{template.name}</h1>
                 <Badge tone={template.customized ? "accent" : "neutral"}>
@@ -212,7 +220,7 @@ export default function AdminEmailTemplateShow() {
             </div>
             <Link
               href="/admin/email-templates"
-              className="shrink-0 text-sm text-ink-muted no-underline hover:text-ink-display"
+              className="hidden shrink-0 text-sm text-ink-muted no-underline hover:text-ink-display sm:inline"
             >
               ← All templates
             </Link>
@@ -313,7 +321,7 @@ export default function AdminEmailTemplateShow() {
             </div>
 
             {/* Actions */}
-            <div className="flex flex-wrap items-center gap-3 border-t border-hairline pt-6">
+            <MobileStickyActionBar>
               <Button onClick={handleSave} type="button">
                 Save
               </Button>
@@ -331,7 +339,7 @@ export default function AdminEmailTemplateShow() {
               >
                 Reset to default
               </Button>
-            </div>
+            </MobileStickyActionBar>
           </div>
         )}
 

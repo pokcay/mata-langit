@@ -1,10 +1,11 @@
 import * as React from "react"
-import { Database, Home, Inbox, LayoutDashboard, Mail, Package, Palette, PieChart, ShieldCheck, ShoppingCart, Store, Table2, TrendingUp, Users } from "lucide-react"
+import { Database, Grid3x3, Home, Inbox, LayoutDashboard, Mail, Package, Palette, PieChart, ShieldCheck, ShoppingCart, Store, Table2, TrendingUp, Users } from "lucide-react"
 import { usePage } from "@inertiajs/react"
 import { MainNav, type NavEntry } from "@/components/MainNav"
 import type { PageProps } from "@/types/inertia"
+import { cn } from "@/lib/utils"
 
-export function AdminShell({ children }: { children: React.ReactNode }) {
+export function AdminShell({ children, full }: { children: React.ReactNode; full?: boolean }) {
   const { props } = usePage<PageProps>()
   const unreadCount = props.admin_inbox_unread_count ?? 0
   const integrityMismatchCount = props.data_integrity_mismatch_count ?? 0
@@ -46,7 +47,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         url.startsWith("/admin/master-product-dist") ||
         url.startsWith("/admin/trans-sellout-account") ||
         url.startsWith("/admin/market-share-b2b") ||
-        url.startsWith("/admin/data"),
+        url.startsWith("/admin/data") ||
+        url.startsWith("/admin/pivot"),
       children: [
         {
           href: "/admin/timeseries/uploads",
@@ -85,6 +87,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           match: (url) => url.startsWith("/admin/data/ka-profitability"),
         },
         {
+          href: "/admin/pivot",
+          icon: Grid3x3,
+          label: "Pivot",
+          match: (url) => url.startsWith("/admin/pivot"),
+        },
+        {
           href: "/admin/data/integrity",
           icon: ShieldCheck,
           label: "Data Integrity",
@@ -110,8 +118,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-page text-ink-body">
       <MainNav items={adminNavItems} brandHref="/admin" />
-      <main className="min-w-0 flex-1 px-6 pb-8 pt-16 sm:px-10 lg:py-8">
-        <div className="mx-auto max-w-5xl">{children}</div>
+      <main className={cn("min-w-0 flex-1 pt-16 lg:pt-0", full ? "overflow-hidden" : "px-6 pb-24 sm:px-10 lg:py-8 lg:pb-8")}>
+        {full ? children : <div className="mx-auto max-w-5xl">{children}</div>}
       </main>
     </div>
   )

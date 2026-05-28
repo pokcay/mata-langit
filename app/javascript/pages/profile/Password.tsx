@@ -4,6 +4,7 @@ import { AppShell } from "@/components/AppShell"
 import { PageHeader } from "@/components/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { MobileStickyActionBar } from "@/components/ui/mobile-sticky-action-bar"
 import { ProfileSubNav } from "./ProfileSubNav"
 
 import type { PageProps } from "@/types/inertia"
@@ -76,9 +77,11 @@ export default function ProfilePassword() {
                 <p className="text-xs text-danger-display">{errors.password}</p>
               )}
             </div>
-            <Button type="submit" disabled={passwordForm.processing}>
-              Update password
-            </Button>
+            <MobileStickyActionBar>
+              <Button type="submit" disabled={passwordForm.processing}>
+                Update password
+              </Button>
+            </MobileStickyActionBar>
           </form>
         </section>
       </AppShell>

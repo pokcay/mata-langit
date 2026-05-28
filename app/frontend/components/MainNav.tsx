@@ -24,6 +24,8 @@ import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { cn } from "@/lib/utils"
 import type { PageProps } from "@/types/inertia"
 
+const DRAWER_HISTORY_STATE = "main-nav-drawer-open"
+
 const STORAGE_KEY = "main-nav-open"
 const BRAND = "Mata Langit"
 
@@ -79,6 +81,69 @@ export function MainNav({
   const [open, setOpen] = useMainNavOpen()
   const [mobileOpen, setMobileOpen] = React.useState(false)
 
+  const openMobile = React.useCallback(() => {
+    setMobileOpen(true)
+    if (typeof window !== "undefined") {
+      try {
+        window.history.pushState({ [DRAWER_HISTORY_STATE]: true }, "")
+      } catch {
+        /* no-op */
+      }
+    }
+  }, [])
+
+  const closeMobile = React.useCallback((opts?: { fromPopState?: boolean }) => {
+    setMobileOpen(false)
+    if (typeof window !== "undefined" && !opts?.fromPopState) {
+      // If we pushed a history entry to open, pop it so the URL stays clean
+      const state = window.history.state as Record<string, unknown> | null
+      if (state && state[DRAWER_HISTORY_STATE]) {
+        try {
+          window.history.back()
+        } catch {
+          /* no-op */
+        }
+      }
+    }
+  }, [])
+
+  // Browser back closes the drawer instead of navigating
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    if (!mobileOpen) return
+    const onPop = () => closeMobile({ fromPopState: true })
+    window.addEventListener("popstate", onPop)
+    return () => window.removeEventListener("popstate", onPop)
+  }, [mobileOpen, closeMobile])
+
+  // Body scroll lock while drawer is open
+  React.useEffect(() => {
+    if (typeof document === "undefined") return
+    if (!mobileOpen) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      document.body.style.overflow = previous
+    }
+  }, [mobileOpen])
+
+  // Swipe-left-to-close gesture
+  const touchStart = React.useRef<{ x: number; y: number } | null>(null)
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0]
+    touchStart.current = { x: t.clientX, y: t.clientY }
+  }
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (!touchStart.current) return
+    const t = e.touches[0]
+    const dx = t.clientX - touchStart.current.x
+    const dy = Math.abs(t.clientY - touchStart.current.y)
+    if (dx < -60 && dy < 40) {
+      touchStart.current = null
+      closeMobile()
+    }
+  }
+
   return (
     <>
       <aside
@@ -100,40 +165,230 @@ export function MainNav({
         <div className="fixed inset-0 z-40 lg:hidden">
           <div
             className="absolute inset-0 bg-ink-display/40 backdrop-blur-sm"
-            onClick={() => setMobileOpen(false)}
+            onClick={() => closeMobile()}
             aria-hidden
           />
-          <aside className="absolute left-0 top-0 flex h-full w-64 flex-col bg-page shadow-xl">
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-hairline px-4">
-              <span className="font-display text-sm font-semibold text-ink-display">
-                {BRAND}
-              </span>
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation"
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            className="absolute left-0 top-0 flex h-full w-full flex-col bg-page shadow-xl"
+            style={{
+              animation: "drawer-slide-in 200ms cubic-bezier(0.16, 1, 0.3, 1)",
+            }}
+          >
+            {/* Brand bar */}
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-hairline px-3">
+              <Link
+                href={brandHref}
+                onClick={() => closeMobile()}
+                className="flex items-center gap-2 text-ink-display no-underline"
+                aria-label={BRAND}
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-faded font-display text-base font-semibold text-accent">
+                  {BRAND.charAt(0)}
+                </span>
+                <span className="font-display text-base font-semibold">
+                  {BRAND}
+                </span>
+              </Link>
               <button
                 type="button"
-                onClick={() => setMobileOpen(false)}
-                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-ink-muted hover:bg-surface hover:text-ink-display"
+                onClick={() => closeMobile()}
+                className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-md text-ink-muted hover:bg-surface hover:text-ink-display"
                 aria-label="Close navigation"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
             </div>
-            <RailNav open items={items} onClose={() => setMobileOpen(false)} />
-            <div className="border-t border-hairline p-2">
-              <UserMenu open />
-            </div>
+
+            {/* Scrollable nav body — every row ≥ 48 px */}
+            <MobileNavBody items={items} onNavigate={() => closeMobile()} />
+
+            {/* Account section */}
+            <MobileAccountBlock onNavigate={() => closeMobile()} />
           </aside>
         </div>
       )}
 
       <button
         type="button"
-        onClick={() => setMobileOpen(true)}
-        className="fixed left-3 top-3 z-30 inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-hairline bg-page text-ink-body hover:bg-surface lg:hidden"
+        onClick={openMobile}
+        className="fixed left-3 top-3 z-30 inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-md border border-hairline bg-page text-ink-body hover:bg-surface lg:hidden"
         aria-label="Open navigation"
       >
-        <Menu className="h-4 w-4" />
+        <Menu className="h-5 w-5" />
       </button>
     </>
+  )
+}
+
+/**
+ * Mobile-only nav body: every entry is at least 48 px tall, NavGroups are
+ * rendered in always-expanded form so all sub-items are immediately visible
+ * with indent. Tapping any item calls onNavigate (which closes the drawer).
+ */
+function MobileNavBody({
+  items,
+  onNavigate,
+}: {
+  items: NavEntry[]
+  onNavigate: () => void
+}) {
+  const { url } = usePage()
+  return (
+    <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3 text-base">
+      {items.map((entry) => {
+        if ("type" in entry && entry.type === "group") {
+          const Icon = entry.icon
+          return (
+            <div key={entry.storageKey} className="mt-2 first:mt-0">
+              <div className="flex items-center gap-3 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                <Icon className="h-4 w-4 shrink-0" />
+                <span>{entry.label}</span>
+              </div>
+              <div className="ml-2 flex flex-col gap-0.5 border-l border-hairline pl-3">
+                {entry.children.map((child) => (
+                  <MobileNavRow
+                    key={child.href}
+                    href={child.href}
+                    icon={child.icon}
+                    label={child.label}
+                    badge={child.badge}
+                    active={child.match(url)}
+                    onNavigate={onNavigate}
+                  />
+                ))}
+              </div>
+            </div>
+          )
+        }
+        const item = entry as NavItemDef
+        return (
+          <MobileNavRow
+            key={item.href}
+            href={item.href}
+            icon={item.icon}
+            label={item.label}
+            badge={item.badge}
+            active={item.match(url)}
+            onNavigate={onNavigate}
+          />
+        )
+      })}
+    </nav>
+  )
+}
+
+function MobileNavRow({
+  href,
+  icon: Icon,
+  label,
+  badge,
+  active,
+  onNavigate,
+}: {
+  href: string
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  badge?: string
+  active?: boolean
+  onNavigate: () => void
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      className={cn(
+        "flex min-h-12 items-center gap-3 rounded-md px-3 py-2 text-base no-underline",
+        active
+          ? "bg-accent-faded text-accent-display"
+          : "text-ink-body hover:bg-surface hover:text-ink-display",
+      )}
+    >
+      <Icon className="h-5 w-5 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {badge && (
+        <span className="shrink-0 rounded-full bg-danger-faded px-2 py-0.5 text-xs font-semibold text-danger-display">
+          {badge}
+        </span>
+      )}
+    </Link>
+  )
+}
+
+/**
+ * Account block at the bottom of the mobile drawer:
+ *  - email avatar row
+ *  - Profile, Settings
+ *  - Theme toggle (block)
+ *  - Sign out
+ * Every row ≥ 48 px.
+ */
+function MobileAccountBlock({ onNavigate }: { onNavigate: () => void }) {
+  const { props } = usePage<PageProps>()
+  const email = props.current_user?.email ?? ""
+  const isAdmin = props.current_user?.admin ?? false
+  const initial = email.charAt(0).toUpperCase() || "?"
+
+  return (
+    <div
+      className="shrink-0 border-t border-hairline bg-page p-3"
+      style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+    >
+      <div className="flex min-h-12 items-center gap-3 px-3 py-2">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-faded text-sm font-semibold text-accent">
+          {initial}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm text-ink-body">{email}</span>
+      </div>
+
+      <Link
+        href="/profile"
+        onClick={onNavigate}
+        className="flex min-h-12 items-center gap-3 rounded-md px-3 py-2 text-base text-ink-body no-underline hover:bg-surface"
+      >
+        <User className="h-5 w-5 shrink-0" />
+        Profile
+      </Link>
+      <Link
+        href="/settings"
+        onClick={onNavigate}
+        className="flex min-h-12 items-center gap-3 rounded-md px-3 py-2 text-base text-ink-body no-underline hover:bg-surface"
+      >
+        <Settings className="h-5 w-5 shrink-0" />
+        Settings
+      </Link>
+
+      {isAdmin && (
+        <Link
+          href="/admin"
+          onClick={onNavigate}
+          className="flex min-h-12 items-center gap-3 rounded-md px-3 py-2 text-base text-ink-body no-underline hover:bg-surface"
+        >
+          <Shield className="h-5 w-5 shrink-0" />
+          Admin area
+        </Link>
+      )}
+
+      <div className="py-2">
+        <ThemeToggle block />
+      </div>
+
+      <button
+        type="button"
+        onClick={() => {
+          onNavigate()
+          router.delete("/logout")
+        }}
+        className="flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left text-base text-ink-body hover:bg-surface"
+      >
+        <LogOut className="h-5 w-5 shrink-0" />
+        Sign out
+      </button>
+    </div>
   )
 }
 

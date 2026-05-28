@@ -13,8 +13,9 @@ The feature is built on the existing Rails 8 + React 19 + PostgreSQL stack with 
 - Admin opens `/admin/pivot` and sees a blank canvas with a configuration panel
 - The configuration panel shows available dimension fields grouped by hierarchy (Geography/Distribution, Product, Time, People), plus a separate Measurement section
 - Admin assigns dimension fields to Rows, Columns, or Filters by clicking; selected fields appear as chips in their respective zones
-- Admin picks one numeric measurement column and an aggregation function (Sum, Count, Average, Min, Max, Count Distinct)
-- Admin adds optional filter conditions: for each field, a multi-select dropdown of distinct values fetched on demand
+- Admin picks one measurement — **Netto Wise** (`netto_wise`), **Dist Netto** (`dist_netto`), or **Active Outlet** (always COUNT DISTINCT of `outlet_national_code`); for Netto Wise and Dist Netto, the admin also selects an aggregation function (Sum, Count, Average, Min, Max)
+- Admin adds optional **regular filter** conditions: for each dimension field, a multi-select dropdown of distinct values fetched on demand
+- A dedicated **Period Filter** section is always visible (not added on demand) with three mandatory controls the user must fill before Generate can run: **Fiscal Year** (multi-select), **Month** (multi-select), and a **day-range** (Start Day / End Day). These scope the data entering every aggregation cell — independently of what dimension fields the user places in Rows or Columns
 - The "Generate" button is enabled only when at least one Row field and one Measurement are selected; clicking it fetches and renders the pivot table
 - The canvas shows a true cross-tab table: row-dimension labels on the left, column-dimension values as headers, aggregated measurement values in cells, plus row totals, column totals, and a grand total
 - If no Column field is selected, the table renders as a flat summary (one row per row-group, one value column)
@@ -112,25 +113,15 @@ Grouped by hierarchy as displayed in the field picker:
 
 ---
 
-### Measurement fields (numeric columns available for aggregation)
+### Measurement fields
 
-- `netto_wise` — Netto wise
-- `netto_dist` — Netto dist
-- `qty_total_pcs` — Qty total pcs
-- `qty_carton` — Qty carton
-- `qty_pieces` — Qty pieces
-- `brutto_dist` — Brutto dist
-- `disc_value_total` — Total discount value
-- `salesman_day` — Salesman day
-- `salesman_frequency` — Salesman frequency
-- `salesman_week_1` / `salesman_week_2` / `salesman_week_3` / `salesman_week_4` — Salesman week
-- `md_day` — MD day
-- `md_frequency` — MD frequency
-- `md_week_1` / `md_week_2` / `md_week_3` / `md_week_4` — MD week
-- `content_carton_pcs` — Content carton pcs
-- `balance_summary` — Balance summary
+| Key | Label | Notes |
+|-----|-------|-------|
+| `netto_wise` | Netto Wise | Numeric column; supports aggregation function selection |
+| `dist_netto` | Dist Netto | Numeric column; supports aggregation function selection |
+| `active_outlet` | Active Outlet | Always computed as `COUNT(DISTINCT outlet_national_code)`; no aggregation function selector shown |
 
-Aggregation functions: **Sum, Count, Average, Min, Max, Count Distinct**
+Aggregation functions (for `netto_wise` and `dist_netto` only): **Sum, Count, Average, Min, Max**
 
 ---
 
@@ -143,7 +134,7 @@ This milestone delivers a working pivot builder: the field picker panel, measure
 - New admin page at `/admin/pivot` with a two-panel layout: configuration panel on the left/top, canvas on the right/bottom
 - Configuration panel contains three zones (Rows, Columns, Measurement) and a searchable field list grouped by the five dimension hierarchies
 - Clicking a dimension field opens a small popover or inline toggle to assign it to Rows or Columns; the field then appears as a chip in the selected zone; clicking the chip removes it
-- Measurement section: a dropdown of all numeric measurement columns and a dropdown for the aggregation function (Sum, Count, Average, Min, Max, Count Distinct)
+- Measurement section: three choices — **Netto Wise**, **Dist Netto**, **Active Outlet**; selecting Netto Wise or Dist Netto also shows an aggregation function dropdown (Sum, Count, Average, Min, Max); selecting Active Outlet hides the aggregation dropdown (always COUNT DISTINCT)
 - "Generate" button — enabled only when at least one Row field and one Measurement are selected
 - The backend receives the config, builds a dynamic cross-tab SQL using `CASE WHEN` aggregates over `timeseries_transactions`, and returns the result
 - The FY computed dimension is supported: the backend translates it to a SQL expression `CASE WHEN period_month >= 4 THEN 'FY' || LPAD((period_year % 100)::text, 2, '0') || LPAD(((period_year + 1) % 100)::text, 2, '0') ELSE 'FY' || LPAD(((period_year - 1) % 100)::text, 2, '0') || LPAD((period_year % 100)::text, 2, '0') END`
@@ -175,15 +166,50 @@ This milestone adds the filter builder (including the `flag_program` filter-only
 
 ### What gets built
 
+#### Regular Filters
+
 - The configuration panel gains a **Filters** zone alongside Rows and Columns
 - All dimension fields can be added as filters; `flag_program` is available in Filters only (not Rows/Columns)
 - Adding a filter for a dimension field opens a multi-select dropdown populated by fetching the distinct values for that field from the database (on-demand API call, not pre-loaded)
 - Active filter conditions shown as chips; clicking a chip removes the filter
 - Multiple filters are combined with AND logic in the SQL WHERE clause
 - The FY dimension works correctly in both the field picker and filters: the SQL expression is applied consistently
-- The full pivot config (row fields, column fields, measurement field, aggregation function, filter conditions) is serialised into the URL query string on every change
-- On page load with a pre-filled URL, the config is restored and the pivot query is executed automatically (no need to click Generate again)
 - Filter values are fetched respecting any currently active filters on other fields (dependent filtering: e.g. selecting Region first narrows the Outlet list)
+
+#### Period Filter (always visible, mandatory)
+
+The configuration panel always shows a dedicated **Period Filter** section above the regular Filters zone. All three controls are required — the Generate button remains disabled until each has at least one value selected / set:
+
+1. **Fiscal Year** — **multi-select** dropdown populated on demand with distinct FY values from the database (e.g. `FY2526`, `FY2425`). User may select one or more FYs.
+2. **Month** — **multi-select** dropdown of calendar months (Jan–Dec / 1–12). User may select one or more months.
+3. **Days** — two side-by-side comboboxes defining a day-of-month range (applied uniformly to every selected FY × Month combination):
+   - **Start Day** — values `1`–`31`, default `1`
+   - **End Day** — values `1`–`31` plus `"End of Month"` (last option), default `"End of Month"`
+   - `"End of Month"` resolves in SQL to the actual last day of the given month
+
+**How this scopes the data (important):**
+
+The Period Filter is a *data scope*, not a structural pivot control. It limits which rows from `timeseries_transactions` enter the aggregation, independently of what the user has placed in the Rows / Columns / Measurement zones.
+
+Example — user selects FY2324 + FY2425 + FY2526, months Apr + May, days 1–15. If the user then also puts FY and Month as pivot *columns*, the resulting cross-tab shows all six FY × Month combinations as column headers, and every cell reflects only transactions from days 1–15 of that month:
+
+```
+              FY2324          |       FY2425         |       FY2526
+         Apr    |    May      |   Apr    |    May    |   Apr    |    May
+Row ...   X     |     X       |    X     |     X     |    X     |     X
+```
+
+The Period Filter translates to a SQL WHERE clause applied before any regular filters:
+- `fy_computed IN (:selected_fys)` — using the same FY SQL expression as the FY dimension
+- `period_month IN (:selected_months)` — calendar month numbers
+- `EXTRACT(DAY FROM date_transaction) BETWEEN :start_day AND :end_day` — where `"End of Month"` is evaluated per-row as the last day of that row's month
+
+The Period Filter config (all selected FYs, selected months, start day, end day) is included in the serialised URL alongside regular filters.
+
+#### URL Persistence
+
+- The full pivot config (row fields, column fields, measurement, aggregation function, regular filter conditions, and period filter values) is serialised into the URL query string on every change
+- On page load with a pre-filled URL, the config is restored and the pivot query is executed automatically (no need to click Generate again)
 
 ### What milestone 2 explicitly does NOT include
 
@@ -194,7 +220,7 @@ This milestone adds the filter builder (including the `flag_program` filter-only
 
 ### Done when
 
-The admin can add multiple filter conditions (e.g. `region = "JAVA"` AND `period_year = 2025` AND `flag_program = "PROMO"`), click Generate, see filtered results, then copy the URL and paste it in a new tab — the same pivot view loads immediately with the same config and results.
+The admin selects multiple FYs (e.g. FY2324 + FY2425 + FY2526), multiple months (e.g. Apr + May), and a day range (e.g. 1–15) in the Period Filter, optionally adds regular filter conditions (e.g. `region = "JAVA"`), and clicks Generate. The pivot table reflects only data within that scope. If the admin also places FY and Month as pivot columns, the cross-tab shows all selected FY × Month combinations as headers with day-scoped values in every cell. Copying the URL and pasting it in a new tab restores the exact same config and reruns the pivot immediately.
 
 ---
 

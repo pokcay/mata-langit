@@ -22,6 +22,8 @@ import { ToggleButtonsSection } from "@/components/design-system/sections/elemen
 import { ListingsSection } from "@/components/design-system/sections/elements/ListingsSection";
 import { DataTableSection } from "@/components/design-system/sections/elements/DataTableSection";
 import { ModalSection } from "@/components/design-system/sections/elements/ModalSection";
+import { BottomSheetSection } from "@/components/design-system/sections/elements/BottomSheetSection";
+import { MobileDataListSection } from "@/components/design-system/sections/elements/MobileDataListSection";
 import { CalloutSection } from "@/components/design-system/sections/elements/CalloutSection";
 import { DropdownMenuSection } from "@/components/design-system/sections/elements/DropdownMenuSection";
 
@@ -35,10 +37,10 @@ export function DesignSystem() {
           <button
             type="button"
             onClick={() => setNavOpen(true)}
-            className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-hairline bg-surface text-ink-body lg:hidden"
+            className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-md border border-hairline bg-surface text-ink-body lg:hidden"
             aria-label="Open navigation"
           >
-            <Menu className="h-4 w-4" />
+            <Menu className="h-5 w-5" />
           </button>
           <span className="font-display text-sm font-semibold text-ink-display">
             Design System
@@ -82,10 +84,10 @@ export function DesignSystem() {
                 <button
                   type="button"
                   onClick={() => setNavOpen(false)}
-                  className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-ink-muted hover:text-ink-display"
+                  className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-md text-ink-muted hover:text-ink-display"
                   aria-label="Close navigation"
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-5 w-5" />
                 </button>
               </div>
               <SidebarNav onNavigate={() => setNavOpen(false)} />
@@ -121,6 +123,8 @@ export function DesignSystem() {
           <ListingsSection />
           <DataTableSection />
           <ModalSection />
+          <BottomSheetSection />
+          <MobileDataListSection />
           <DropdownMenuSection />
           <CalloutSection />
           <BaseStylesSection />

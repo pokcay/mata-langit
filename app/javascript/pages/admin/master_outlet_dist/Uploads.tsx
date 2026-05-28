@@ -18,9 +18,33 @@ import { AdminShell } from "@/components/AdminShell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  DataCard,
+  DataCardField,
+  DataCardGrid,
+  DataCardHeader,
+  DataCardStatus,
+  DataCardTitle,
+} from "@/components/ui/data-card"
 import { Input } from "@/components/ui/input"
+import { MobileFilterSheet } from "@/components/ui/mobile-filter-sheet"
+import { MobileFilterSortBar } from "@/components/ui/mobile-filter-sort-bar"
+import { MobileSortSheet, type SortOption } from "@/components/ui/mobile-sort-sheet"
 import { Select } from "@/components/ui/select"
 import { consumer } from "@/lib/actioncable"
+
+const SORT_OPTIONS: SortOption[] = [
+  { sort: "created_at", direction: "desc", label: "Tanggal terbaru" },
+  { sort: "created_at", direction: "asc", label: "Tanggal terlama" },
+  { sort: "dist_name", direction: "asc", label: "Distributor A–Z" },
+  { sort: "dist_name", direction: "desc", label: "Distributor Z–A" },
+  { sort: "row_count", direction: "desc", label: "Outlet terbanyak" },
+  { sort: "row_count", direction: "asc", label: "Outlet paling sedikit" },
+  { sort: "replaced_row_count", direction: "desc", label: "Diganti terbanyak" },
+  { sort: "replaced_row_count", direction: "asc", label: "Diganti paling sedikit" },
+  { sort: "status", direction: "asc", label: "Status A–Z" },
+  { sort: "status", direction: "desc", label: "Status Z–A" },
+]
 
 // ---------------------------------------------------------------------------
 // Types
@@ -444,6 +468,13 @@ export default function AdminMasterOutletDistUploads({
   const failCount    = trackedUploads.filter((u) => u.status === "failed").length
 
   const hasActiveFilter = !!(filters.dist_name || filters.status || filters.search)
+
+  // Mobile filter / sort sheets
+  const [filterOpen, setFilterOpen] = React.useState(false)
+  const [sortOpen, setSortOpen]     = React.useState(false)
+  const activeFilterCount = [filters.dist_name, filters.status, filters.search].filter(Boolean).length
+  const sortLabel =
+    SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction)?.label ?? "Urutkan"
   const totalPages = Math.ceil(total / per_page)
 
   const trackedIds = React.useMemo(() => new Set(trackedUploads.map((u) => u.id)), [trackedUploads])
@@ -669,8 +700,18 @@ export default function AdminMasterOutletDistUploads({
 
         {/* History table */}
         <div className="mt-10">
-          {/* Filter bar */}
-          <div className="mb-4 flex flex-wrap items-end gap-3">
+          {/* Filter + Sort bar (mobile) */}
+          <div className="mb-4 md:hidden">
+            <MobileFilterSortBar
+              filterCount={activeFilterCount}
+              sortLabel={sortLabel}
+              onFilterClick={() => setFilterOpen(true)}
+              onSortClick={() => setSortOpen(true)}
+            />
+          </div>
+
+          {/* Filter bar (desktop) */}
+          <div className="mb-4 hidden flex-wrap items-end gap-3 md:flex">
             <Select
               value={filters.dist_name ?? ""}
               onChange={(e) => navigate({ dist_name: e.target.value || null, page: null })}
@@ -728,7 +769,15 @@ export default function AdminMasterOutletDistUploads({
                 : "Belum ada upload."}
             </p>
           ) : (
-            <div className="overflow-hidden rounded-md border border-hairline">
+            <>
+              {/* Mobile card list */}
+              <div className="space-y-3 md:hidden">
+                {visibleUploads.map((u) => (
+                  <UploadCard key={u.id} upload={u} />
+                ))}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-md border border-hairline md:block">
               <table className="w-full text-sm">
                 <thead className="bg-surface">
                   <tr>
@@ -761,7 +810,8 @@ export default function AdminMasterOutletDistUploads({
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
 
           {/* Pagination */}
@@ -797,6 +847,79 @@ export default function AdminMasterOutletDistUploads({
             </div>
           )}
         </div>
+
+        {/* Mobile filter sheet */}
+        <MobileFilterSheet
+          open={filterOpen}
+          onOpenChange={setFilterOpen}
+          initial={{
+            dist_name: filters.dist_name ?? "",
+            status: filters.status ?? "",
+            search: filters.search ?? "",
+          }}
+          onApply={(v) => {
+            navigate({
+              dist_name: v.dist_name || null,
+              status: v.status || null,
+              search: v.search || null,
+              page: null,
+            })
+            setFilterOpen(false)
+          }}
+          onReset={() => {
+            navigate({ dist_name: null, status: null, search: null, page: null })
+            setFilterOpen(false)
+          }}
+        >
+          {(draft, setDraft) => (
+            <>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Distributor</span>
+                <Select
+                  value={draft.dist_name}
+                  onChange={(e) => setDraft({ ...draft, dist_name: e.target.value })}
+                >
+                  <option value="">Semua Distributor</option>
+                  {available_dist_names.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Status</span>
+                <Select
+                  value={draft.status}
+                  onChange={(e) => setDraft({ ...draft, status: e.target.value })}
+                >
+                  <option value="">Semua Status</option>
+                  {(["pending", "processing", "completed", "failed", "cancelled"] as const).map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Cari filename</span>
+                <Input
+                  type="search"
+                  value={draft.search}
+                  onChange={(e) => setDraft({ ...draft, search: e.target.value })}
+                />
+              </label>
+            </>
+          )}
+        </MobileFilterSheet>
+
+        {/* Mobile sort sheet */}
+        <MobileSortSheet
+          open={sortOpen}
+          onOpenChange={setSortOpen}
+          current={{ sort, direction }}
+          options={SORT_OPTIONS}
+          onSelect={(opt) => {
+            navigate({ sort: opt.sort, direction: opt.direction })
+            setSortOpen(false)
+          }}
+        />
       </AdminShell>
     </>
   )
@@ -1001,6 +1124,44 @@ function UploadTableRow({ upload }: { upload: UploadRow }) {
         {upload.imported_at ? formatDate(upload.imported_at) : formatDate(upload.created_at)}
       </td>
     </tr>
+  )
+}
+
+function UploadCard({ upload }: { upload: UploadRow }) {
+  return (
+    <DataCard>
+      <DataCardHeader>
+        <DataCardTitle>
+          <span className="break-all" title={upload.filename}>{upload.filename}</span>
+        </DataCardTitle>
+        <DataCardStatus><StatusBadge status={upload.status} /></DataCardStatus>
+      </DataCardHeader>
+      <DataCardGrid>
+        <DataCardField
+          wide
+          label="Distributor"
+          value={
+            <>
+              <div className="font-medium">{upload.dist_name}</div>
+              <div className="text-xs text-ink-muted">{upload.dist_sap_code}</div>
+            </>
+          }
+        />
+        <DataCardField
+          label="Jumlah Outlet"
+          value={upload.row_count != null ? upload.row_count.toLocaleString() : "—"}
+        />
+        <DataCardField
+          label="Diganti"
+          value={upload.replaced_row_count > 0 ? upload.replaced_row_count.toLocaleString() : "—"}
+        />
+        <DataCardField
+          wide
+          label="Diunggah"
+          value={upload.imported_at ? formatDate(upload.imported_at) : formatDate(upload.created_at)}
+        />
+      </DataCardGrid>
+    </DataCard>
   )
 }
 

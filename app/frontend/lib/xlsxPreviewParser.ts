@@ -3,10 +3,13 @@ import { unzipSync } from "fflate"
 /**
  * Minimal XLSX preview parser.
  *
- * Reads workbook.xml + rels to find the correct first-sheet path (the ZIP
- * internal filename doesn't always match the visible tab order), then builds a
- * shared-strings table, identifies the Netto Wise column letter from the header
- * row, and sums that column across all data rows.
+ * Resolves worksheet order from workbook metadata, builds a shared-strings
+ * table, identifies the Netto Wise column letter from the header row, and
+ * sums that column across all data rows.
+ *
+ * If the first worksheet has no data rows (e.g. blank cover sheet or wrong
+ * sheet resolved from metadata), the parser scans all xl/worksheets/*.xml
+ * entries and returns the result from the sheet with the most data rows.
  */
 export async function parseXlsxForPreview(
   file: File
@@ -15,14 +18,19 @@ export async function parseXlsxForPreview(
   const data = new Uint8Array(buf)
   const decode = (b: Uint8Array) => new TextDecoder().decode(b)
 
-  // ── 1. Resolve the first worksheet path from workbook metadata ─────────────
-  const worksheetPath = resolveFirstWorksheetPath(data, decode)
+  // ── 1. Resolve all worksheet paths in tab order from workbook metadata ──────
+  const worksheetPaths = resolveWorksheetPaths(data, decode)
 
-  // ── 2. Build shared-strings table (joining <r><t>…</t></r> runs) ───────────
+  // ── 2. Extract shared strings + ALL worksheets in one ZIP pass ────────────
+  //    Extracting all sheets avoids a second unzip when the primary sheet is
+  //    empty (e.g. blank cover sheet before the actual data sheet).
   const extracted = unzipSync(data, {
-    filter: (f) => f.name === "xl/sharedStrings.xml" || f.name === worksheetPath,
+    filter: (f) =>
+      f.name === "xl/sharedStrings.xml" ||
+      (f.name.startsWith("xl/worksheets/") && f.name.endsWith(".xml")),
   })
 
+  // ── 3. Build shared-strings table (joining <r><t>…</t></r> runs) ───────────
   const sharedStrings: string[] = []
   const ssBytes = extracted["xl/sharedStrings.xml"]
   if (ssBytes) {
@@ -34,12 +42,51 @@ export async function parseXlsxForPreview(
     }
   }
 
-  const wsBytes = extracted[worksheetPath]
-  if (!wsBytes) throw new Error("Invalid XLSX: worksheet not found")
-  const wsXml = decode(wsBytes)
+  // ── 4. Build ordered list: workbook tab order first, then any extras ────────
+  const extractedWsNames = Object.keys(extracted).filter(
+    (n) => n.startsWith("xl/worksheets/") && n.endsWith(".xml"),
+  )
+  const remainingPaths = extractedWsNames.filter((n) => !worksheetPaths.includes(n))
+  const orderedPaths = [...worksheetPaths, ...remainingPaths]
+
+  if (orderedPaths.length === 0) {
+    throw new Error("Invalid XLSX: no worksheet paths found")
+  }
+
+  // ── 5. Parse each worksheet; return result from the sheet with most rows ────
+  //    This handles the case where sheet1 is empty (cover/title sheet) and
+  //    actual data lives on sheet2 or later.
+  let bestRowCount = 0
+  let bestNettoSum = 0
+  let anyReadable = false
+
+  for (const path of orderedPaths) {
+    const wsBytes = extracted[path]
+    if (!wsBytes) continue
+    anyReadable = true
+    const { rowCount, nettoSum } = parseWorksheetXml(decode(wsBytes), sharedStrings)
+    if (rowCount > bestRowCount) {
+      bestRowCount = rowCount
+      bestNettoSum = nettoSum
+    }
+  }
+
+  if (!anyReadable) {
+    throw new Error("Invalid XLSX: no readable worksheet found")
+  }
+
+  return { rowCount: bestRowCount, nettoSum: Math.round(bestNettoSum * 10000) / 10000 }
+}
+
+// ── Worksheet XML parser ───────────────────────────────────────────────────────
+
+function parseWorksheetXml(
+  wsXml: string,
+  sharedStrings: string[],
+): { rowCount: number; nettoSum: number } {
   const rowParts = wsXml.split("<row ")
 
-  // ── 3. Locate Netto Wise column letter from header row ─────────────────────
+  // ── Locate Netto Wise column letter from header row ───────────────────────
   let nettoCol = ""
   if (rowParts.length > 1) {
     const headerEnd = rowParts[1].indexOf("</row>")
@@ -55,7 +102,7 @@ export async function parseXlsxForPreview(
     }
   }
 
-  // ── 4. Count rows and sum netto column ─────────────────────────────────────
+  // ── Count rows and sum netto column ──────────────────────────────────────
   let rowCount = 0
   let nettoSum = 0
 
@@ -79,24 +126,24 @@ export async function parseXlsxForPreview(
     }
   }
 
-  return { rowCount, nettoSum: Math.round(nettoSum * 10000) / 10000 }
+  return { rowCount, nettoSum }
 }
 
 // ── Workbook path resolution ───────────────────────────────────────────────────
 
 /**
- * Reads xl/workbook.xml and xl/_rels/workbook.xml.rels to find the ZIP-internal
- * path of the first worksheet (by tab order).  Falls back to sheet1.xml.
+ * Reads xl/workbook.xml and xl/_rels/workbook.xml.rels to return ALL worksheet
+ * paths in tab order.  Falls back to ["xl/worksheets/sheet1.xml"].
  *
  * The XLSX ZIP's sheetN.xml filenames reflect creation order, not tab order.
  * If sheets are reordered in Excel, the first visible tab may map to sheet2.xml
  * or higher.  Without this lookup, the parser silently reads the wrong sheet.
  */
-function resolveFirstWorksheetPath(
+function resolveWorksheetPaths(
   data: Uint8Array,
   decode: (b: Uint8Array) => string,
-): string {
-  const fallback = "xl/worksheets/sheet1.xml"
+): string[] {
+  const fallback = ["xl/worksheets/sheet1.xml"]
   try {
     const metaFiles = unzipSync(data, {
       filter: (f) =>
@@ -110,27 +157,29 @@ function resolveFirstWorksheetPath(
     const wbXml = decode(wbBytes)
     const relsXml = decode(relsBytes)
 
-    const rId = extractFirstSheetRId(wbXml)
-    if (!rId) return fallback
+    // Extract ALL sheet rIds in tab order (not just the first one)
+    const rIds: string[] = []
+    for (const m of wbXml.matchAll(/<sheet\b[^>]*>/g)) {
+      const idMatch = m[0].match(/\br:id="([^"]+)"/)
+      if (idMatch) rIds.push(idMatch[1])
+    }
+    if (!rIds.length) return fallback
 
-    const target = extractRelTarget(relsXml, rId)
-    if (!target) return fallback
+    const paths = rIds
+      .map((rId) => extractRelTarget(relsXml, rId))
+      .filter((t): t is string => t !== null)
+      .map((target) => {
+        // Target is relative to the xl/ directory (stored in xl/_rels/).
+        // Common forms: "worksheets/sheet2.xml" or "../worksheets/sheet2.xml"
+        if (target.startsWith("../")) return target.slice(3)
+        if (target.startsWith("/")) return target.slice(1)
+        return `xl/${target}`
+      })
 
-    // Target is relative to the xl/ directory (stored in xl/_rels/).
-    // Common forms: "worksheets/sheet2.xml" or "../worksheets/sheet2.xml"
-    if (target.startsWith("../")) return target.slice(3)
-    if (target.startsWith("/")) return target.slice(1)
-    return `xl/${target}`
+    return paths.length > 0 ? paths : fallback
   } catch {
     return fallback
   }
-}
-
-function extractFirstSheetRId(wbXml: string): string | null {
-  const match = wbXml.match(/<sheet\b[^>]*>/)
-  if (!match) return null
-  const m = match[0].match(/\br:id="([^"]+)"/)
-  return m ? m[1] : null
 }
 
 function extractRelTarget(relsXml: string, rId: string): string | null {

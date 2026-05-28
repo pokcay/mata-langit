@@ -46,3 +46,10 @@ node_modules
 # Sensitive local data
 /Timeseries/
 /Data/
+
+# Editor / AI tool local config
+/.claude/
+/.kilo/
+
+# Local backup files
+*.bak

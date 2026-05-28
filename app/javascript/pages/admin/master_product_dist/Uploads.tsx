@@ -15,6 +15,30 @@ import {
   XCircle,
 } from "lucide-react"
 import { AdminShell } from "@/components/AdminShell"
+import {
+  DataCard,
+  DataCardField,
+  DataCardGrid,
+  DataCardHeader,
+  DataCardStatus,
+  DataCardTitle,
+} from "@/components/ui/data-card"
+import { MobileFilterSheet } from "@/components/ui/mobile-filter-sheet"
+import { MobileFilterSortBar } from "@/components/ui/mobile-filter-sort-bar"
+import { MobileSortSheet, type SortOption } from "@/components/ui/mobile-sort-sheet"
+
+const SORT_OPTIONS: SortOption[] = [
+  { sort: "created_at", direction: "desc", label: "Tanggal terbaru" },
+  { sort: "created_at", direction: "asc", label: "Tanggal terlama" },
+  { sort: "distributor_name", direction: "asc", label: "Distributor A–Z" },
+  { sort: "distributor_name", direction: "desc", label: "Distributor Z–A" },
+  { sort: "region", direction: "asc", label: "Region A–Z" },
+  { sort: "region", direction: "desc", label: "Region Z–A" },
+  { sort: "row_count", direction: "desc", label: "Baris terbanyak" },
+  { sort: "row_count", direction: "asc", label: "Baris paling sedikit" },
+  { sort: "status", direction: "asc", label: "Status A–Z" },
+  { sort: "status", direction: "desc", label: "Status Z–A" },
+]
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -464,6 +488,13 @@ export default function AdminMasterProductDistUploads({
   )
 
   const hasActiveFilter = !!(filters.region || filters.status || filters.search)
+
+  // Mobile filter / sort sheets
+  const [filterOpen, setFilterOpen] = React.useState(false)
+  const [sortOpen, setSortOpen]     = React.useState(false)
+  const activeFilterCount = [filters.region, filters.status, filters.search].filter(Boolean).length
+  const sortLabel =
+    SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction)?.label ?? "Urutkan"
   const totalPages = Math.ceil(total / per_page)
 
   // -------------------------------------------------------------------------
@@ -683,8 +714,18 @@ export default function AdminMasterProductDistUploads({
 
         {/* History table */}
         <div className="mt-10">
-          {/* Filter bar */}
-          <div className="mb-4 flex flex-wrap items-end gap-3">
+          {/* Filter + Sort bar (mobile) */}
+          <div className="mb-4 md:hidden">
+            <MobileFilterSortBar
+              filterCount={activeFilterCount}
+              sortLabel={sortLabel}
+              onFilterClick={() => setFilterOpen(true)}
+              onSortClick={() => setSortOpen(true)}
+            />
+          </div>
+
+          {/* Filter bar (desktop) */}
+          <div className="mb-4 hidden flex-wrap items-end gap-3 md:flex">
             <Select
               value={filters.region ?? ""}
               onChange={(e) => navigate({ region: e.target.value || null, page: null })}
@@ -741,7 +782,15 @@ export default function AdminMasterProductDistUploads({
                 : "Belum ada upload."}
             </p>
           ) : (
-            <div className="overflow-hidden rounded-md border border-hairline">
+            <>
+              {/* Mobile card list */}
+              <div className="space-y-3 md:hidden">
+                {visibleUploads.map((u) => (
+                  <UploadCard key={u.id} upload={u} />
+                ))}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-md border border-hairline md:block">
               <table className="w-full text-sm">
                 <thead className="bg-surface">
                   <tr>
@@ -774,7 +823,8 @@ export default function AdminMasterProductDistUploads({
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
 
           {/* Summary + pagination */}
@@ -810,6 +860,79 @@ export default function AdminMasterProductDistUploads({
             </div>
           )}
         </div>
+
+        {/* Mobile filter sheet */}
+        <MobileFilterSheet
+          open={filterOpen}
+          onOpenChange={setFilterOpen}
+          initial={{
+            region: filters.region ?? "",
+            status: filters.status ?? "",
+            search: filters.search ?? "",
+          }}
+          onApply={(v) => {
+            navigate({
+              region: v.region || null,
+              status: v.status || null,
+              search: v.search || null,
+              page: null,
+            })
+            setFilterOpen(false)
+          }}
+          onReset={() => {
+            navigate({ region: null, status: null, search: null, page: null })
+            setFilterOpen(false)
+          }}
+        >
+          {(draft, setDraft) => (
+            <>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Region</span>
+                <Select
+                  value={draft.region}
+                  onChange={(e) => setDraft({ ...draft, region: e.target.value })}
+                >
+                  <option value="">Semua Region</option>
+                  {available_regions.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Status</span>
+                <Select
+                  value={draft.status}
+                  onChange={(e) => setDraft({ ...draft, status: e.target.value })}
+                >
+                  <option value="">Semua Status</option>
+                  {(["pending", "processing", "completed", "failed", "cancelled"] as const).map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Cari filename</span>
+                <Input
+                  type="search"
+                  value={draft.search}
+                  onChange={(e) => setDraft({ ...draft, search: e.target.value })}
+                />
+              </label>
+            </>
+          )}
+        </MobileFilterSheet>
+
+        {/* Mobile sort sheet */}
+        <MobileSortSheet
+          open={sortOpen}
+          onOpenChange={setSortOpen}
+          current={{ sort, direction }}
+          options={SORT_OPTIONS}
+          onSelect={(opt) => {
+            navigate({ sort: opt.sort, direction: opt.direction })
+            setSortOpen(false)
+          }}
+        />
       </AdminShell>
     </>
   )
@@ -1032,6 +1155,41 @@ function UploadTableRow({ upload }: { upload: UploadRow }) {
         {upload.imported_at ? formatDate(upload.imported_at) : formatDate(upload.created_at)}
       </td>
     </tr>
+  )
+}
+
+function UploadCard({ upload }: { upload: UploadRow }) {
+  return (
+    <DataCard>
+      <DataCardHeader>
+        <DataCardTitle>
+          <span className="break-all" title={upload.filename}>{upload.filename}</span>
+        </DataCardTitle>
+        <DataCardStatus><StatusBadge status={upload.status} /></DataCardStatus>
+      </DataCardHeader>
+      <DataCardGrid>
+        <DataCardField
+          wide
+          label="Distributor"
+          value={
+            <>
+              <div className="font-medium">{upload.distributor_name}</div>
+              <div className="text-xs text-ink-muted">{upload.distributor_sap_code}</div>
+            </>
+          }
+        />
+        <DataCardField label="Region" value={upload.region ?? "—"} />
+        <DataCardField
+          label="Baris"
+          value={upload.row_count > 0 ? upload.row_count.toLocaleString() : "—"}
+        />
+        <DataCardField
+          wide
+          label="Diunggah"
+          value={upload.imported_at ? formatDate(upload.imported_at) : formatDate(upload.created_at)}
+        />
+      </DataCardGrid>
+    </DataCard>
   )
 }
 

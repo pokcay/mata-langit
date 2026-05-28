@@ -4,6 +4,7 @@ import { AppShell } from "@/components/AppShell"
 import { PageHeader } from "@/components/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { MobileStickyActionBar } from "@/components/ui/mobile-sticky-action-bar"
 import { ProfileSubNav } from "./ProfileSubNav"
 
 import type { PageProps } from "@/types/inertia"
@@ -45,6 +46,7 @@ export default function ProfileDetails() {
               <Input
                 id="email"
                 type="email"
+                inputMode="email"
                 autoComplete="email"
                 required
                 aria-invalid={!!errors.email}
@@ -55,9 +57,11 @@ export default function ProfileDetails() {
                 <p className="text-xs text-danger-display">{errors.email}</p>
               )}
             </div>
-            <Button type="submit" disabled={emailForm.processing}>
-              Update email
-            </Button>
+            <MobileStickyActionBar>
+              <Button type="submit" disabled={emailForm.processing}>
+                Update email
+              </Button>
+            </MobileStickyActionBar>
           </form>
         </section>
       </AppShell>

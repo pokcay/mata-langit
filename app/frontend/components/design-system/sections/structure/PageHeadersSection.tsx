@@ -7,7 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, Ellipsis, Search } from "lucide-react";
+import { ArrowLeft, Bell, ChevronDown, Ellipsis, Search } from "lucide-react";
 
 const code = `{/* Basic — title row only */}
 <div className="border-b border-hairline pb-6">
@@ -185,6 +185,49 @@ export function PageHeadersSection() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-xs uppercase tracking-wider text-ink-muted">
+              Mobile (375 px) — title above stacked actions, with back link
+            </p>
+            <div className="mx-auto w-[375px] max-w-full rounded-xl border border-hairline bg-page p-4">
+              <a
+                href="#"
+                className="-ml-2 mb-1 inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-sm text-ink-muted no-underline"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                All templates
+              </a>
+              <div className="flex flex-col gap-3 border-b border-hairline pb-6">
+                <div>
+                  <h1>Onboarding redesign</h1>
+                  <p className="mt-1">Edit subject and body for this template.</p>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Button>Save</Button>
+                  <Button variant="secondary">Send test email</Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-xs uppercase tracking-wider text-ink-muted">
+              Mobile (375 px) — 3+ actions collapse into a single "Aksi" dropdown
+            </p>
+            <div className="mx-auto w-[375px] max-w-full rounded-xl border border-hairline bg-page p-4">
+              <div className="flex flex-col gap-3 border-b border-hairline pb-6">
+                <div>
+                  <h1>Acme Inc.</h1>
+                  <p className="mt-1">Workspace settings and billing.</p>
+                </div>
+                <Button variant="secondary" className="w-full justify-between gap-2">
+                  Aksi
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
               </div>
             </div>
           </div>

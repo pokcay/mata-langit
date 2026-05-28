@@ -69,6 +69,13 @@ Rails.application.routes.draw do
       end
     end
 
+    get  "pivot/filter_values",    to: "pivot#filter_values",    as: :pivot_filter_values
+    get  "pivot/catalog",          to: "pivot#catalog",           as: :pivot_catalog
+    post "pivot/refresh_catalog",  to: "pivot#refresh_catalog",   as: :pivot_refresh_catalog
+    get  "pivot",                  to: "pivot#show"
+    post "pivot/generate",         to: "pivot#generate",          as: :pivot_generate
+    post "pivot/export",           to: "pivot#export",            as: :pivot_export
+
     namespace :data do
       resources :integrity_checks, path: "integrity", only: %i[ index create show ] do
         member do

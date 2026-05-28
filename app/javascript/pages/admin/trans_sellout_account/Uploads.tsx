@@ -15,6 +15,32 @@ import {
   XCircle,
 } from "lucide-react"
 import { AdminShell } from "@/components/AdminShell"
+import {
+  DataCard,
+  DataCardField,
+  DataCardGrid,
+  DataCardHeader,
+  DataCardStatus,
+  DataCardTitle,
+} from "@/components/ui/data-card"
+import { MobileFilterSheet } from "@/components/ui/mobile-filter-sheet"
+import { MobileFilterSortBar } from "@/components/ui/mobile-filter-sort-bar"
+import { MobileSortSheet, type SortOption } from "@/components/ui/mobile-sort-sheet"
+
+const SORT_OPTIONS: SortOption[] = [
+  { sort: "created_at", direction: "desc", label: "Tanggal terbaru" },
+  { sort: "created_at", direction: "asc", label: "Tanggal terlama" },
+  { sort: "distributor_code", direction: "asc", label: "Account A–Z" },
+  { sort: "distributor_code", direction: "desc", label: "Account Z–A" },
+  { sort: "period", direction: "desc", label: "Periode terbaru" },
+  { sort: "period", direction: "asc", label: "Periode terlama" },
+  { sort: "row_count", direction: "desc", label: "Baris terbanyak" },
+  { sort: "row_count", direction: "asc", label: "Baris paling sedikit" },
+  { sort: "netto_wise_sum", direction: "desc", label: "Netto Wise tertinggi" },
+  { sort: "netto_wise_sum", direction: "asc", label: "Netto Wise terendah" },
+  { sort: "status", direction: "asc", label: "Status A–Z" },
+  { sort: "status", direction: "desc", label: "Status Z–A" },
+]
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -495,6 +521,15 @@ export default function AdminTransSelloutAccountUploads({
   const hasActiveFilter =
     !!filters.distributor_code || !!filters.year || !!filters.month ||
     !!filters.status || !!filters.search
+
+  // Mobile filter / sort sheets
+  const [filterOpen, setFilterOpen] = React.useState(false)
+  const [sortOpen, setSortOpen]     = React.useState(false)
+  const activeFilterCount = [
+    filters.distributor_code, filters.year, filters.month, filters.status, filters.search,
+  ].filter(Boolean).length
+  const sortLabel =
+    SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction)?.label ?? "Urutkan"
   const totalPages = Math.ceil(total / per_page)
 
   // -------------------------------------------------------------------------
@@ -719,8 +754,18 @@ export default function AdminTransSelloutAccountUploads({
         <div className="mt-10">
           <h2 className="mb-4">Riwayat Upload</h2>
 
-          {/* Filter bar */}
-          <div className="mb-4 flex flex-wrap items-end gap-3">
+          {/* Filter + Sort bar (mobile) */}
+          <div className="mb-4 md:hidden">
+            <MobileFilterSortBar
+              filterCount={activeFilterCount}
+              sortLabel={sortLabel}
+              onFilterClick={() => setFilterOpen(true)}
+              onSortClick={() => setSortOpen(true)}
+            />
+          </div>
+
+          {/* Filter bar (desktop) */}
+          <div className="mb-4 hidden flex-wrap items-end gap-3 md:flex">
             <Select
               value={filters.distributor_code ?? ""}
               onChange={(e) => navigate({ distributor_code: e.target.value || null, page: null })}
@@ -804,7 +849,15 @@ export default function AdminTransSelloutAccountUploads({
                 : "Belum ada upload."}
             </p>
           ) : (
-            <div className="overflow-hidden rounded-md border border-hairline">
+            <>
+              {/* Mobile card list */}
+              <div className="space-y-3 md:hidden">
+                {visibleUploads.map((u) => (
+                  <UploadCard key={u.id} upload={u} />
+                ))}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-md border border-hairline md:block">
               <table className="w-full text-sm">
                 <thead className="bg-surface">
                   <tr>
@@ -841,7 +894,8 @@ export default function AdminTransSelloutAccountUploads({
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
 
           {/* Summary + pagination */}
@@ -877,6 +931,110 @@ export default function AdminTransSelloutAccountUploads({
             </div>
           )}
         </div>
+
+        {/* Mobile filter sheet */}
+        <MobileFilterSheet
+          open={filterOpen}
+          onOpenChange={setFilterOpen}
+          initial={{
+            distributor_code: filters.distributor_code ?? "",
+            year: filters.year ?? "",
+            month: filters.month ?? "",
+            status: filters.status ?? "",
+            search: filters.search ?? "",
+          }}
+          onApply={(v) => {
+            navigate({
+              distributor_code: v.distributor_code || null,
+              year: v.year || null,
+              month: v.month || null,
+              status: v.status || null,
+              search: v.search || null,
+              page: null,
+            })
+            setFilterOpen(false)
+          }}
+          onReset={() => {
+            navigate({
+              distributor_code: null, year: null, month: null,
+              status: null, search: null, page: null,
+            })
+            setFilterOpen(false)
+          }}
+        >
+          {(draft, setDraft) => (
+            <>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Account</span>
+                <Select
+                  value={draft.distributor_code}
+                  onChange={(e) => setDraft({ ...draft, distributor_code: e.target.value })}
+                >
+                  <option value="">Semua Account</option>
+                  {available_distributor_codes.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Tahun</span>
+                <Select
+                  value={draft.year}
+                  onChange={(e) => setDraft({ ...draft, year: e.target.value })}
+                >
+                  <option value="">Semua Tahun</option>
+                  {available_years.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Bulan</span>
+                <Select
+                  value={draft.month}
+                  onChange={(e) => setDraft({ ...draft, month: e.target.value })}
+                >
+                  <option value="">Semua Bulan</option>
+                  {MONTHS.slice(1).map((name, i) => (
+                    <option key={i + 1} value={String(i + 1)}>{name}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Status</span>
+                <Select
+                  value={draft.status}
+                  onChange={(e) => setDraft({ ...draft, status: e.target.value })}
+                >
+                  <option value="">Semua Status</option>
+                  {(["pending", "processing", "completed", "failed", "cancelled"] as const).map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Cari filename</span>
+                <Input
+                  type="search"
+                  value={draft.search}
+                  onChange={(e) => setDraft({ ...draft, search: e.target.value })}
+                />
+              </label>
+            </>
+          )}
+        </MobileFilterSheet>
+
+        {/* Mobile sort sheet */}
+        <MobileSortSheet
+          open={sortOpen}
+          onOpenChange={setSortOpen}
+          current={{ sort, direction }}
+          options={SORT_OPTIONS}
+          onSelect={(opt) => {
+            navigate({ sort: opt.sort, direction: opt.direction })
+            setSortOpen(false)
+          }}
+        />
       </AdminShell>
     </>
   )
@@ -1126,6 +1284,46 @@ function UploadTableRow({ upload }: { upload: UploadRow }) {
         {upload.imported_at ? formatDate(upload.imported_at) : formatDate(upload.created_at)}
       </td>
     </tr>
+  )
+}
+
+function UploadCard({ upload }: { upload: UploadRow }) {
+  return (
+    <DataCard>
+      <DataCardHeader>
+        <DataCardTitle>
+          <span className="break-all" title={upload.filename}>{upload.filename}</span>
+        </DataCardTitle>
+        <DataCardStatus><StatusBadge status={upload.status} /></DataCardStatus>
+      </DataCardHeader>
+      <DataCardGrid>
+        <DataCardField
+          wide
+          label="Account"
+          value={
+            <>
+              <div className="font-medium">{upload.distributor_code}</div>
+              <div className="text-xs text-ink-muted">{upload.distributor_name}</div>
+            </>
+          }
+        />
+        <DataCardField label="Periode" value={upload.period_label} />
+        <DataCardField
+          label="Baris"
+          value={upload.row_count > 0 ? upload.row_count.toLocaleString() : "—"}
+        />
+        <DataCardField
+          wide
+          label="Netto Wise"
+          value={upload.netto_wise_sum != null ? formatIDR(upload.netto_wise_sum) : "—"}
+        />
+        <DataCardField
+          wide
+          label="Diunggah"
+          value={upload.imported_at ? formatDate(upload.imported_at) : formatDate(upload.created_at)}
+        />
+      </DataCardGrid>
+    </DataCard>
   )
 }
 

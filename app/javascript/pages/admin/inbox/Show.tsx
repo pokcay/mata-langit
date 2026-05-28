@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Head, Link, router, usePage } from "@inertiajs/react"
+import { ArrowLeft } from "lucide-react"
 import { AdminShell } from "@/components/AdminShell"
 import { Button } from "@/components/ui/button"
 import type { PageProps } from "@/types/inertia"
@@ -43,12 +44,13 @@ export default function AdminInboxShow() {
         <meta property="og:description" content="View an inbound email in the admin inbox." />
       </Head>
       <AdminShell>
-        <div className="mb-4">
+        <div className="mb-2">
           <Link
             href="/admin/inbox"
-            className="text-sm text-ink-muted no-underline hover:text-ink-display"
+            className="-ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-sm text-ink-muted no-underline hover:text-ink-display"
           >
-            ← Inbox
+            <ArrowLeft className="h-4 w-4" />
+            Inbox
           </Link>
         </div>
 

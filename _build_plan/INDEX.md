@@ -1,6 +1,6 @@
 # Build Plan Index
 
-Last updated: 2026-05-26
+Last updated: 2026-05-27
 
 ## Features
 
@@ -9,12 +9,13 @@ Last updated: 2026-05-26
 | 1 | Timeseries Upload Enhancements | ✅ Complete | [prd.md](01-timeseries-upload-enhancements/prd.md) | 2026-05-24 |
 | 2 | Master Outlet Dist | ✅ Complete | [prd.md](02-master-outlet-dist/prd.md) | 2026-05-24 |
 | 3 | Master Product Dist | ✅ Complete | [prd.md](03-master-product-dist/prd.md) | 2026-05-24 |
-| 4 | Pivot | 📋 Planned | [prd.md](04-pivot/prd.md) | 2026-05-24 |
+| 4 | Pivot | ✅ Complete | [prd.md](04-pivot/prd.md) | 2026-05-24 |
 | 5 | Data Integrity | ✅ Complete | [prd.md](05-data-integrity/prd.md) | 2026-05-25 |
 | 6 | Data Integrity: Excel Export | ✅ Complete | [prd.md](06-data-integrity-excel-export/prd.md) | 2026-05-26 |
 | 7 | Trans Sell Out Account | ✅ Complete | [prd.md](07-trans-sellout-account/prd.md) | 2026-05-26 |
 | 8 | Market Share B2B | ✅ Complete | [prd.md](08-market-share-b2b/prd.md) | 2026-05-26 |
 | 9 | KA Profitability | ✅ Complete | [prd.md](09-ka-profitability/prd.md) | 2026-05-26 |
+| 10 | Mobile Responsiveness Overhaul | 🔄 In Progress (M2/3) | [prd.md](10-mobile-responsiveness/prd.md) | 2026-05-27 |
 
 ## Changelog
 
@@ -50,3 +51,9 @@ Last updated: 2026-05-26
 - **2026-05-26** — Feature 9 (KA Profitability), Milestone 1 complete: upload pipeline for Profitability_*.xlsx — parser reads "Detail" sheet (wide format), fiscal_year detection, duplicate/supersede detection via is_latest flag, background import job with advisory lock, static history table with "Terbaru" badge
 - **2026-05-26** — Feature 9 (KA Profitability), Milestone 2 complete: KaProfitabilityUploadChannel + broadcast calls in job + live progress view with per-file Batalkan button + final summary panel + live history row updates
 - **2026-05-26** — Feature 9 (KA Profitability), Milestone 3 complete: server-side pagination (25/page) + Status/Fiscal Year filters + 4-column sort + URL-reflected state on upload history table
+- **2026-05-27** — Feature 4 (Pivot), Milestone 1 complete: /admin/pivot page with field picker, row/col/measurement config, dynamic cross-tab SQL engine (CASE WHEN), and rendered result table with row/col/grand totals
+- **2026-05-27** — Feature 4 (Pivot), Milestone 2 complete: Period Filter (FY/Month/Day range, mandatory), per-field multi-select filters with dependent value loading, GET /admin/pivot/filter_values endpoint, full URL config persistence with auto-execute on load
+- **2026-05-27** — Feature 4 (Pivot), Milestone 3 complete: "Download Excel" button + server-side xlsx (caxlsx, bold headers/totals, #,##0.00 format) + >100-column warning (TooManyColumnsError) + accessibility fixes (th scope="row", keyboard-visible R/K/F buttons)
+- **2026-05-27** — Feature 10 (Mobile Responsiveness Overhaul) PRD created
+- **2026-05-27** — Feature 10 (Mobile Responsiveness Overhaul), Milestone 1 complete: full-screen mobile drawer with expanded Data group + account block + theme toggle + sign-out; new `<BottomSheet>` + `<MobileStickyActionBar>` primitives; every `<Dialog>` now becomes a bottom sheet below `md` via CSS; sticky-submit + 16px-input + 44px-touch-target audit on Settings / Profile / Password / Email Template / Inbox; design system gains a Bottom Sheet section and mobile previews for Modal / Page Headers / Forms
+- **2026-05-27** — Feature 10 (Mobile Responsiveness Overhaul), Milestone 2 complete: responsive table → card-list pattern + Filter/Sort bottom sheets applied to all 8 data screens (6 Uploads + Integrity history + Integrity detail); new `<DataCard>` / `<MobileFilterSortBar>` / `<MobileFilterSheet>` / `<MobileSortSheet>` primitives + design-system "Mobile data list" section; URL query state preserved as the canonical source so desktop ↔ mobile is symmetric

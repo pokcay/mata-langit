@@ -17,6 +17,18 @@ import { AdminShell } from "@/components/AdminShell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  DataCard,
+  DataCardField,
+  DataCardGrid,
+  DataCardHeader,
+  DataCardStatus,
+  DataCardTitle,
+} from "@/components/ui/data-card"
+import { MobileFilterSheet } from "@/components/ui/mobile-filter-sheet"
+import { MobileFilterSortBar } from "@/components/ui/mobile-filter-sort-bar"
+import { MobileSortSheet, type SortOption } from "@/components/ui/mobile-sort-sheet"
+import { Select } from "@/components/ui/select"
 import { consumer } from "@/lib/actioncable"
 import {
   parseKaProfitabilityForPreview,
@@ -129,6 +141,17 @@ function xhrPost<T>(
   })
 }
 
+const SORT_OPTIONS: SortOption[] = [
+  { sort: "created_at", direction: "desc", label: "Tanggal terbaru" },
+  { sort: "created_at", direction: "asc", label: "Tanggal terlama" },
+  { sort: "filename", direction: "asc", label: "Filename A–Z" },
+  { sort: "filename", direction: "desc", label: "Filename Z–A" },
+  { sort: "fiscal_year", direction: "desc", label: "Fiscal Year terbaru" },
+  { sort: "fiscal_year", direction: "asc", label: "Fiscal Year terlama" },
+  { sort: "status", direction: "asc", label: "Status A–Z" },
+  { sort: "status", direction: "desc", label: "Status Z–A" },
+]
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -171,6 +194,13 @@ export default function AdminKaProfitabilityUploads({
   // Live-update history rows for in-flight uploads visible in the table
   const [liveUploads, setLiveUploads] = React.useState<UploadRow[]>(uploads)
   React.useEffect(() => { setLiveUploads(uploads) }, [uploads])
+
+  // Mobile filter / sort sheets
+  const [filterOpen, setFilterOpen] = React.useState(false)
+  const [sortOpen, setSortOpen]     = React.useState(false)
+  const activeFilterCount = [filters.status, filters.fiscal_year].filter(Boolean).length
+  const sortLabel =
+    SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction)?.label ?? "Urutkan"
 
   const isInProgressView = trackedUploads.length > 0
   const isIdleView       = !isInProgressView && !parseResults && !workerProgress && !serverQuerying && !serverPreviews
@@ -711,8 +741,8 @@ export default function AdminKaProfitabilityUploads({
         <div className="mt-10">
           <h2 className="mb-4">Riwayat Upload</h2>
 
-          {/* Filter bar */}
-          <div className="mb-4 flex flex-wrap gap-3">
+          {/* Filter bar (desktop) */}
+          <div className="mb-4 hidden flex-wrap gap-3 md:flex">
             <div className="flex items-center gap-1.5">
               <label htmlFor="filter-status" className="font-normal text-ink-body text-sm">
                 Status
@@ -751,6 +781,16 @@ export default function AdminKaProfitabilityUploads({
             )}
           </div>
 
+          {/* Filter + Sort bar (mobile) */}
+          <div className="mb-4 md:hidden">
+            <MobileFilterSortBar
+              filterCount={activeFilterCount}
+              sortLabel={sortLabel}
+              onFilterClick={() => setFilterOpen(true)}
+              onSortClick={() => setSortOpen(true)}
+            />
+          </div>
+
           {visibleUploads.length === 0 && !isInProgressView ? (
             <p className="text-sm text-ink-muted">
               {filters.status || filters.fiscal_year
@@ -759,7 +799,14 @@ export default function AdminKaProfitabilityUploads({
             </p>
           ) : visibleUploads.length > 0 ? (
             <>
-              <div className="overflow-hidden rounded-md border border-hairline">
+              {/* Mobile card list */}
+              <div className="space-y-3 md:hidden">
+                {visibleUploads.map((u) => (
+                  <UploadCard key={u.id} upload={u} />
+                ))}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-md border border-hairline md:block">
                 <table className="w-full text-sm">
                   <thead className="bg-surface">
                     <tr>
@@ -841,6 +888,72 @@ export default function AdminKaProfitabilityUploads({
             </>
           ) : null}
         </div>
+
+        {/* Mobile filter sheet */}
+        <MobileFilterSheet
+          open={filterOpen}
+          onOpenChange={setFilterOpen}
+          initial={{
+            status: filters.status ?? "",
+            fiscal_year: filters.fiscal_year ?? "",
+          }}
+          onApply={(values) => {
+            navigate({
+              status: values.status || undefined,
+              fiscal_year: values.fiscal_year || undefined,
+              page: undefined,
+            })
+            setFilterOpen(false)
+          }}
+          onReset={() => {
+            navigate({ status: undefined, fiscal_year: undefined, page: undefined })
+            setFilterOpen(false)
+          }}
+        >
+          {(draft, setDraft) => (
+            <>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Status</span>
+                <Select
+                  value={draft.status}
+                  onChange={(e) => setDraft({ ...draft, status: e.target.value })}
+                >
+                  <option value="">Semua</option>
+                  <option value="completed">Selesai</option>
+                  <option value="processing">Memproses</option>
+                  <option value="failed">Gagal</option>
+                  <option value="cancelled">Dibatalkan</option>
+                </Select>
+              </label>
+              {available_fiscal_years.length > 0 && (
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-ink-display">Fiscal Year</span>
+                  <Select
+                    value={draft.fiscal_year}
+                    onChange={(e) => setDraft({ ...draft, fiscal_year: e.target.value })}
+                  >
+                    <option value="">Semua</option>
+                    {available_fiscal_years.map((fy) => (
+                      <option key={fy} value={fy}>{fy}</option>
+                    ))}
+                  </Select>
+                </label>
+              )}
+            </>
+          )}
+        </MobileFilterSheet>
+
+        {/* Mobile sort sheet */}
+        <MobileSortSheet
+          open={sortOpen}
+          onOpenChange={setSortOpen}
+          current={{ sort, direction }}
+          options={SORT_OPTIONS}
+          onSelect={(opt) => {
+            navigate({ sort: opt.sort, direction: opt.direction })
+            setSortOpen(false)
+          }}
+        />
       </AdminShell>
     </>
   )
@@ -1061,6 +1174,44 @@ function UploadTableRow({ upload }: { upload: UploadRow }) {
       </td>
       <td className="px-4 py-3 text-ink-muted">{upload.uploaded_by ?? "—"}</td>
     </tr>
+  )
+}
+
+function UploadCard({ upload }: { upload: UploadRow }) {
+  const date = new Date(upload.created_at).toLocaleDateString("id-ID", {
+    day: "numeric", month: "short", year: "numeric",
+  })
+  const time = new Date(upload.created_at).toLocaleTimeString("id-ID", {
+    hour: "2-digit", minute: "2-digit",
+  })
+
+  return (
+    <DataCard>
+      <DataCardHeader>
+        <DataCardTitle>
+          <span className="break-all" title={upload.filename}>{upload.filename}</span>
+          {upload.is_latest && (
+            <Badge tone="success" className="ml-2 align-middle text-xs">Terbaru</Badge>
+          )}
+        </DataCardTitle>
+        <DataCardStatus>
+          <StatusBadge status={upload.status} errorMessage={upload.error_message} />
+        </DataCardStatus>
+      </DataCardHeader>
+      <DataCardGrid>
+        <DataCardField label="Fiscal Year" value={upload.fiscal_year || "—"} />
+        <DataCardField
+          label="Outlet"
+          value={upload.outlet_count != null ? upload.outlet_count.toLocaleString("id-ID") : "—"}
+        />
+        <DataCardField
+          label="Records"
+          value={upload.record_count != null ? upload.record_count.toLocaleString("id-ID") : "—"}
+        />
+        <DataCardField label="Diunggah" value={`${date} ${time}`} />
+        <DataCardField wide label="Oleh" value={upload.uploaded_by ?? "—"} />
+      </DataCardGrid>
+    </DataCard>
   )
 }
 

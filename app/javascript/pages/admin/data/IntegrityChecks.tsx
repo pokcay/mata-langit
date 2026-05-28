@@ -17,9 +17,31 @@ import {
 import { AdminShell } from "@/components/AdminShell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  DataCard,
+  DataCardField,
+  DataCardGrid,
+  DataCardHeader,
+  DataCardStatus,
+  DataCardTitle,
+} from "@/components/ui/data-card"
 import { Input } from "@/components/ui/input"
+import { MobileFilterSheet } from "@/components/ui/mobile-filter-sheet"
+import { MobileFilterSortBar } from "@/components/ui/mobile-filter-sort-bar"
+import { MobileSortSheet, type SortOption } from "@/components/ui/mobile-sort-sheet"
 import { Select } from "@/components/ui/select"
 import { consumer } from "@/lib/actioncable"
+
+const HISTORY_SORT_OPTIONS: SortOption[] = [
+  { sort: "checked_at", direction: "desc", label: "Diperiksa terbaru" },
+  { sort: "checked_at", direction: "asc", label: "Diperiksa terlama" },
+  { sort: "period", direction: "desc", label: "Periode terbaru" },
+  { sort: "period", direction: "asc", label: "Periode terlama" },
+  { sort: "mismatched_count", direction: "desc", label: "Mismatched terbanyak" },
+  { sort: "mismatched_count", direction: "asc", label: "Mismatched paling sedikit" },
+  { sort: "status", direction: "asc", label: "Status A–Z" },
+  { sort: "status", direction: "desc", label: "Status Z–A" },
+]
 
 // ---------------------------------------------------------------------------
 // Types
@@ -297,6 +319,16 @@ export default function AdminDataIntegrityChecks({
   }
 
   const totalPages = Math.ceil(total / per_page)
+
+  // ── Mobile filter / sort sheets ─────────────────────────────────────────────
+  const [filterOpen, setFilterOpen] = React.useState(false)
+  const [sortOpen, setSortOpen]     = React.useState(false)
+  const activeFilterCount = [
+    filters.search, filters.status_filter, filters.year, filters.month,
+  ].filter(Boolean).length
+  const sortLabel =
+    HISTORY_SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction)?.label ??
+    "Urutkan"
 
   // ── Derived state ───────────────────────────────────────────────────────────
 
@@ -606,8 +638,8 @@ export default function AdminDataIntegrityChecks({
             <p className="text-xs font-medium text-ink-muted uppercase tracking-wider">
               Riwayat check
             </p>
-            {/* Filter bar */}
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Filter bar (desktop) */}
+            <div className="hidden flex-wrap items-center gap-2 md:flex">
               <form onSubmit={submitSearch} className="flex gap-2">
                 <Input
                   type="search"
@@ -663,6 +695,16 @@ export default function AdminDataIntegrityChecks({
             </div>
           </div>
 
+          {/* Filter + Sort bar (mobile) */}
+          <div className="mt-3 md:hidden">
+            <MobileFilterSortBar
+              filterCount={activeFilterCount}
+              sortLabel={sortLabel}
+              onFilterClick={() => setFilterOpen(true)}
+              onSortClick={() => setSortOpen(true)}
+            />
+          </div>
+
           {checks.length === 0 ? (
             <div className="mt-4 flex flex-col items-center justify-center rounded-lg border border-hairline py-12 text-center">
               <CheckCircle2 className="mb-2 h-8 w-8 text-ink-muted" />
@@ -673,7 +715,14 @@ export default function AdminDataIntegrityChecks({
             </div>
           ) : (
             <>
-              <div className="mt-4 overflow-hidden rounded-md border border-hairline">
+              {/* Mobile card list */}
+              <div className="mt-4 space-y-3 md:hidden">
+                {checks.map((c) => (
+                  <CheckCard key={c.id} check={c} />
+                ))}
+              </div>
+
+              <div className="mt-4 hidden overflow-hidden rounded-md border border-hairline md:block">
                 <table className="w-full text-sm">
                   <thead className="bg-surface">
                     <tr>
@@ -768,8 +817,146 @@ export default function AdminDataIntegrityChecks({
             </>
           )}
         </div>
+
+        {/* Mobile filter sheet */}
+        <MobileFilterSheet
+          open={filterOpen}
+          onOpenChange={setFilterOpen}
+          initial={{
+            search: filters.search ?? "",
+            status_filter: filters.status_filter ?? "",
+            year: filters.year ?? "",
+            month: filters.month ?? "",
+          }}
+          onApply={(v) => {
+            setSearchDraft(v.search)
+            navigate({
+              search: v.search,
+              status_filter: v.status_filter,
+              year: v.year,
+              month: v.month,
+              page: "1",
+            })
+            setFilterOpen(false)
+          }}
+          onReset={() => {
+            setSearchDraft("")
+            navigate({ search: "", status_filter: "", year: "", month: "", page: "1" })
+            setFilterOpen(false)
+          }}
+        >
+          {(draft, setDraft) => (
+            <>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Cari filename</span>
+                <Input
+                  type="search"
+                  value={draft.search}
+                  onChange={(e) => setDraft({ ...draft, search: e.target.value })}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Status</span>
+                <Select
+                  value={draft.status_filter}
+                  onChange={(e) => setDraft({ ...draft, status_filter: e.target.value })}
+                >
+                  <option value="">Semua status</option>
+                  {available_statuses.map((s) => (
+                    <option key={s} value={s}>{STATUS_LABELS[s as CheckStatus] ?? s}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Tahun</span>
+                <Select
+                  value={draft.year}
+                  onChange={(e) => setDraft({ ...draft, year: e.target.value })}
+                >
+                  <option value="">Semua tahun</option>
+                  {available_years.map((y) => (
+                    <option key={y} value={String(y)}>{y}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Bulan</span>
+                <Select
+                  value={draft.month}
+                  onChange={(e) => setDraft({ ...draft, month: e.target.value })}
+                >
+                  <option value="">Semua bulan</option>
+                  {available_months.map((m) => (
+                    <option key={m} value={String(m)}>{MONTHS[m]}</option>
+                  ))}
+                </Select>
+              </label>
+            </>
+          )}
+        </MobileFilterSheet>
+
+        {/* Mobile sort sheet */}
+        <MobileSortSheet
+          open={sortOpen}
+          onOpenChange={setSortOpen}
+          current={{ sort, direction }}
+          options={HISTORY_SORT_OPTIONS}
+          onSelect={(opt) => {
+            navigate({ sort: opt.sort, direction: opt.direction, page: "1" })
+            setSortOpen(false)
+          }}
+        />
       </AdminShell>
     </>
+  )
+}
+
+function CheckCard({ check: c }: { check: HistoryCheck }) {
+  return (
+    <DataCard onClick={() => router.visit(`/admin/data/integrity/${c.id}`)}>
+      <DataCardHeader>
+        <DataCardTitle>
+          <span className="break-all" title={c.filename}>{c.filename}</span>
+          <span className="mt-1 block">
+            <ProgramFilterBadge includeProgram={c.include_program} />
+          </span>
+        </DataCardTitle>
+        <DataCardStatus><StatusBadge status={c.status} /></DataCardStatus>
+      </DataCardHeader>
+      <DataCardGrid>
+        <DataCardField wide label="Periode" value={c.period_range_label ?? "—"} />
+        <DataCardField
+          label="Matched"
+          value={c.matched_count.toLocaleString("id-ID")}
+        />
+        <DataCardField
+          label="Mismatched"
+          value={
+            <span className={c.mismatched_count > 0 ? "font-medium text-danger-display" : ""}>
+              {c.mismatched_count.toLocaleString("id-ID")}
+            </span>
+          }
+        />
+        <DataCardField
+          label="Missing DB"
+          value={c.missing_in_db_count.toLocaleString("id-ID")}
+        />
+        <DataCardField
+          label="Extra DB"
+          value={c.extra_in_db_count.toLocaleString("id-ID")}
+        />
+        <DataCardField
+          label="Total SoT"
+          value={c.total_rows_in_sot.toLocaleString("id-ID")}
+        />
+        <DataCardField label="Diunggah oleh" value={c.uploaded_by ?? "—"} />
+        <DataCardField
+          wide
+          label="Diperiksa"
+          value={c.checked_at ? formatDate(c.checked_at) : "—"}
+        />
+      </DataCardGrid>
+    </DataCard>
   )
 }
 

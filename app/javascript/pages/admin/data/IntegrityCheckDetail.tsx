@@ -16,9 +16,34 @@ import {
 import { AdminShell } from "@/components/AdminShell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  DataCard,
+  DataCardActions,
+  DataCardField,
+  DataCardGrid,
+  DataCardHeader,
+  DataCardStatus,
+  DataCardTitle,
+} from "@/components/ui/data-card"
 import { Input } from "@/components/ui/input"
+import { MobileFilterSheet } from "@/components/ui/mobile-filter-sheet"
+import { MobileFilterSortBar } from "@/components/ui/mobile-filter-sort-bar"
+import { MobileSortSheet, type SortOption } from "@/components/ui/mobile-sort-sheet"
 import { Select } from "@/components/ui/select"
 import { consumer } from "@/lib/actioncable"
+
+const RESULT_SORT_OPTIONS: SortOption[] = [
+  { sort: "region", direction: "asc", label: "Region A–Z" },
+  { sort: "region", direction: "desc", label: "Region Z–A" },
+  { sort: "period", direction: "desc", label: "Periode terbaru" },
+  { sort: "period", direction: "asc", label: "Periode terlama" },
+  { sort: "sot", direction: "desc", label: "SoT tertinggi" },
+  { sort: "sot", direction: "asc", label: "SoT terendah" },
+  { sort: "db", direction: "desc", label: "DB tertinggi" },
+  { sort: "db", direction: "asc", label: "DB terendah" },
+  { sort: "delta_abs", direction: "desc", label: "Delta terbesar" },
+  { sort: "delta_abs", direction: "asc", label: "Delta terkecil" },
+]
 
 // ---------------------------------------------------------------------------
 // Types
@@ -236,6 +261,15 @@ export default function AdminDataIntegrityCheckDetail({
   }
 
   const totalPages = Math.ceil(total / per_page)
+
+  // Mobile filter / sort sheets
+  const [filterOpen, setFilterOpen] = React.useState(false)
+  const [sortOpen, setSortOpen]     = React.useState(false)
+  const activeFilterCount = [filters.search, filters.year, filters.month].filter(Boolean).length
+  const sortLabel =
+    RESULT_SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction)?.label ??
+    "Urutkan"
+
   const periodLabel = buildPeriodLabel(
     check.period_min_year, check.period_min_month,
     check.period_max_year, check.period_max_month
@@ -440,8 +474,18 @@ export default function AdminDataIntegrityCheckDetail({
               </nav>
             </div>
 
-            {/* Filter bar */}
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+            {/* Filter + Sort bar (mobile) */}
+            <div className="mt-4 md:hidden">
+              <MobileFilterSortBar
+                filterCount={activeFilterCount}
+                sortLabel={sortLabel}
+                onFilterClick={() => setFilterOpen(true)}
+                onSortClick={() => setSortOpen(true)}
+              />
+            </div>
+
+            {/* Filter bar (desktop) */}
+            <div className="mt-4 hidden flex-wrap items-center gap-2 md:flex">
               <form onSubmit={submitSearch} className="flex gap-2">
                 <Input
                   type="search"
@@ -492,7 +536,14 @@ export default function AdminDataIntegrityCheckDetail({
                 <EmptyState tab={tab} />
               ) : (
                 <>
-                  <div className="overflow-hidden rounded-md border border-hairline">
+                  {/* Mobile card list */}
+                  <div className="space-y-3 md:hidden">
+                    {results.map((row) => (
+                      <ResultCard key={row.id} row={row} checkId={check.id} />
+                    ))}
+                  </div>
+
+                  <div className="hidden overflow-hidden rounded-md border border-hairline md:block">
                     <table className="w-full text-sm">
                       <thead className="bg-surface">
                         <tr>
@@ -544,10 +595,148 @@ export default function AdminDataIntegrityCheckDetail({
                 </>
               )}
             </div>
+
+            {/* Mobile filter sheet */}
+            <MobileFilterSheet
+              open={filterOpen}
+              onOpenChange={setFilterOpen}
+              initial={{
+                search: filters.search ?? "",
+                year: filters.year ?? "",
+                month: filters.month ?? "",
+              }}
+              onApply={(v) => {
+                setSearchDraft(v.search)
+                navigate({ search: v.search, year: v.year, month: v.month, page: "1" })
+                setFilterOpen(false)
+              }}
+              onReset={() => {
+                setSearchDraft("")
+                navigate({ search: "", year: "", month: "", page: "1" })
+                setFilterOpen(false)
+              }}
+            >
+              {(draft, setDraft) => (
+                <>
+                  <label className="block">
+                    <span className="mb-1 block text-sm font-medium text-ink-display">Cari region</span>
+                    <Input
+                      type="search"
+                      value={draft.search}
+                      onChange={(e) => setDraft({ ...draft, search: e.target.value })}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-sm font-medium text-ink-display">Tahun</span>
+                    <Select
+                      value={draft.year}
+                      onChange={(e) => setDraft({ ...draft, year: e.target.value })}
+                    >
+                      <option value="">Semua tahun</option>
+                      {available_years.map((y) => (
+                        <option key={y} value={String(y)}>{y}</option>
+                      ))}
+                    </Select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-sm font-medium text-ink-display">Bulan</span>
+                    <Select
+                      value={draft.month}
+                      onChange={(e) => setDraft({ ...draft, month: e.target.value })}
+                    >
+                      <option value="">Semua bulan</option>
+                      {available_months.map((m) => (
+                        <option key={m} value={String(m)}>{MONTHS[m]}</option>
+                      ))}
+                    </Select>
+                  </label>
+                </>
+              )}
+            </MobileFilterSheet>
+
+            {/* Mobile sort sheet */}
+            <MobileSortSheet
+              open={sortOpen}
+              onOpenChange={setSortOpen}
+              current={{ sort, direction }}
+              options={RESULT_SORT_OPTIONS}
+              onSelect={(opt) => {
+                navigate({ sort: opt.sort, direction: opt.direction, page: "1" })
+                setSortOpen(false)
+              }}
+            />
           </>
         )}
       </AdminShell>
     </>
+  )
+}
+
+function ResultCard({ row, checkId }: { row: ResultRow; checkId: number }) {
+  const actionable = row.outcome !== "matched"
+  const returnTo   = `/admin/data/integrity/${checkId}`
+  const uploadUrl  = actionable
+    ? `/admin/timeseries/uploads?region=${encodeURIComponent(row.region)}&year=${row.period_year}&month=${row.period_month}&return_to=${encodeURIComponent(returnTo)}&integrity_outcome=${row.outcome}`
+    : null
+  const isResolved = !!row.resolved_at
+
+  return (
+    <DataCard className={isResolved ? "opacity-50" : undefined}>
+      <DataCardHeader>
+        <DataCardTitle>
+          <span className="break-words">{row.region}</span>
+          <span className="mt-0.5 block text-xs text-ink-muted">
+            {MONTHS[row.period_month]} {row.period_year}
+          </span>
+        </DataCardTitle>
+        <DataCardStatus>
+          <div className="flex flex-col items-end gap-1.5">
+            <OutcomeBadge outcome={row.outcome} />
+            {isResolved && (
+              <Badge tone="success">
+                <CheckCircle2 className="mr-1 h-3 w-3" />
+                Resolved {formatDateShort(row.resolved_at!)}
+              </Badge>
+            )}
+          </div>
+        </DataCardStatus>
+      </DataCardHeader>
+      <DataCardGrid>
+        <DataCardField
+          label="SoT Netto Wise"
+          value={row.sot_netto_wise != null ? formatIDR(row.sot_netto_wise) : "—"}
+        />
+        <DataCardField
+          label="DB Netto Wise"
+          value={row.db_netto_wise != null ? formatIDR(row.db_netto_wise) : "—"}
+        />
+        <DataCardField
+          wide
+          label="Delta"
+          value={
+            row.delta != null ? (
+              <span className={row.delta !== 0 ? "font-medium text-danger-display" : ""}>
+                {row.delta > 0 ? "+" : ""}
+                {formatIDR(row.delta)}
+              </span>
+            ) : (
+              <span className="text-ink-muted">—</span>
+            )
+          }
+        />
+      </DataCardGrid>
+      {uploadUrl && (
+        <DataCardActions>
+          <a
+            href={uploadUrl}
+            className="inline-flex h-11 items-center justify-center gap-1.5 rounded-md border border-hairline text-sm text-accent hover:bg-surface"
+          >
+            Upload ulang Timeseries
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </DataCardActions>
+      )}
+    </DataCard>
   )
 }
 

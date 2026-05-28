@@ -98,6 +98,11 @@ export function FormsSection() {
         </ul>
       }
       preview={
+        <div className="space-y-8">
+          <div>
+            <p className="mb-2 text-xs uppercase tracking-wider text-ink-muted">
+              Inline form (desktop pattern)
+            </p>
         <form
           className="max-w-md space-y-4"
           onSubmit={(e) => e.preventDefault()}
@@ -167,6 +172,61 @@ export function FormsSection() {
 
           <Button type="submit">Save</Button>
         </form>
+          </div>
+
+          <div>
+            <p className="mb-2 text-xs uppercase tracking-wider text-ink-muted">
+              Mobile (375 px) — single-column with sticky submit pinned to viewport bottom
+            </p>
+            <div className="mx-auto w-[375px] max-w-full overflow-hidden rounded-xl border border-hairline bg-page">
+              <div className="relative h-[420px]">
+                <div className="space-y-4 p-4 pb-20">
+                  <div className="space-y-2">
+                    <label htmlFor="ds-form-mobile-email">Email</label>
+                    <Input
+                      id="ds-form-mobile-email"
+                      type="email"
+                      placeholder="you@example.com"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="ds-form-mobile-name">Display name</label>
+                    <Input
+                      id="ds-form-mobile-name"
+                      placeholder="Your name"
+                    />
+                  </div>
+                  <label className="flex items-start gap-2 text-sm font-normal text-ink-body">
+                    <Checkbox
+                      id="ds-form-mobile-newsletter"
+                      defaultChecked
+                      className="mt-0.5"
+                    />
+                    <span>Send me product updates</span>
+                  </label>
+                </div>
+                <div
+                  className="absolute inset-x-0 bottom-0 flex items-center gap-2 border-t border-hairline bg-page px-4 py-3"
+                  style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+                >
+                  <Button type="button" className="flex-1">
+                    Save
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-ink-muted">
+              Use{" "}
+              <code>&lt;MobileStickyActionBar&gt;</code> from{" "}
+              <code>@/components/ui/mobile-sticky-action-bar</code> to wrap a
+              form's primary submit. Renders inline at <code>md+</code> and as a
+              fixed bottom bar below <code>md</code> (with{" "}
+              <code>env(safe-area-inset-bottom)</code> padding). Shells already
+              add <code>pb-24 lg:pb-0</code> so the bar never covers the last
+              field.
+            </p>
+          </div>
+        </div>
       }
       code={code}
       options={

@@ -3,6 +3,7 @@ import { Head, useForm, usePage } from "@inertiajs/react"
 import { AppShell } from "@/components/AppShell"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { MobileStickyActionBar } from "@/components/ui/mobile-sticky-action-bar"
 import type { PageProps } from "@/types/inertia"
 
 export default function Settings({
@@ -58,9 +59,11 @@ export default function Settings({
               </span>
             </label>
 
-            <Button type="submit" disabled={form.processing}>
-              Simpan preferensi
-            </Button>
+            <MobileStickyActionBar>
+              <Button type="submit" disabled={form.processing}>
+                Simpan preferensi
+              </Button>
+            </MobileStickyActionBar>
           </form>
         </section>
       </AppShell>

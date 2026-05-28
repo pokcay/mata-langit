@@ -21,7 +21,19 @@ import { AdminShell } from "@/components/AdminShell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  DataCard,
+  DataCardActions,
+  DataCardField,
+  DataCardGrid,
+  DataCardHeader,
+  DataCardStatus,
+  DataCardTitle,
+} from "@/components/ui/data-card"
 import { Input } from "@/components/ui/input"
+import { MobileFilterSheet } from "@/components/ui/mobile-filter-sheet"
+import { MobileFilterSortBar } from "@/components/ui/mobile-filter-sort-bar"
+import { MobileSortSheet, type SortOption } from "@/components/ui/mobile-sort-sheet"
 import { Select } from "@/components/ui/select"
 import { consumer } from "@/lib/actioncable"
 
@@ -103,6 +115,21 @@ type Filters = {
   status: string | null
   search: string | null
 }
+
+const SORT_OPTIONS: SortOption[] = [
+  { sort: "created_at", direction: "desc", label: "Tanggal terbaru" },
+  { sort: "created_at", direction: "asc", label: "Tanggal terlama" },
+  { sort: "region", direction: "asc", label: "Region A–Z" },
+  { sort: "region", direction: "desc", label: "Region Z–A" },
+  { sort: "period", direction: "desc", label: "Periode terbaru" },
+  { sort: "period", direction: "asc", label: "Periode terlama" },
+  { sort: "row_count", direction: "desc", label: "Baris terbanyak" },
+  { sort: "row_count", direction: "asc", label: "Baris paling sedikit" },
+  { sort: "netto_wise_sum", direction: "desc", label: "Netto Wise tertinggi" },
+  { sort: "netto_wise_sum", direction: "asc", label: "Netto Wise terendah" },
+  { sort: "status", direction: "asc", label: "Status A–Z" },
+  { sort: "status", direction: "desc", label: "Status Z–A" },
+]
 
 // ---------------------------------------------------------------------------
 // Page props
@@ -546,6 +573,15 @@ export default function AdminTimeseriesUploads({
   )
   const totalPages = Math.ceil(total / per_page)
 
+  // Mobile filter / sort sheets
+  const [filterOpen, setFilterOpen] = React.useState(false)
+  const [sortOpen, setSortOpen]     = React.useState(false)
+  const activeFilterCount = [
+    filters.region, filters.year, filters.month, filters.status, filters.search,
+  ].filter(Boolean).length
+  const sortLabel =
+    SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction)?.label ?? "Urutkan"
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -779,8 +815,18 @@ export default function AdminTimeseriesUploads({
 
         {/* Uploads list */}
         <div className="mt-10">
-          {/* Filter bar */}
-          <div className="mb-4 flex flex-wrap items-end gap-3">
+          {/* Filter + Sort bar (mobile) */}
+          <div className="mb-4 md:hidden">
+            <MobileFilterSortBar
+              filterCount={activeFilterCount}
+              sortLabel={sortLabel}
+              onFilterClick={() => setFilterOpen(true)}
+              onSortClick={() => setSortOpen(true)}
+            />
+          </div>
+
+          {/* Filter bar (desktop) */}
+          <div className="mb-4 hidden flex-wrap items-end gap-3 md:flex">
             <Select
               value={filters.region ?? ""}
               onChange={(e) => navigate({ region: e.target.value || null, page: null })}
@@ -885,8 +931,24 @@ export default function AdminTimeseriesUploads({
                 : "Belum ada upload."}
             </p>
           ) : (
-            <div className="overflow-hidden rounded-md border border-hairline">
-              <table className="w-full text-sm">
+            <>
+              {/* Mobile card list */}
+              <div className="space-y-3 md:hidden">
+                {visibleUploads.map((u) => (
+                  <UploadCard
+                    key={u.id}
+                    upload={u}
+                    filters={filters}
+                    sort={sort}
+                    direction={direction}
+                    selected={selectedIds.has(u.id)}
+                    onToggleSelect={() => toggleSelect(u.id)}
+                  />
+                ))}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-md border border-hairline md:block">
+                <table className="w-full text-sm">
                 <thead className="bg-surface">
                   <tr>
                     <th className="w-10 px-3 py-2.5">
@@ -942,7 +1004,8 @@ export default function AdminTimeseriesUploads({
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
 
           {/* Summary + pagination */}
@@ -978,6 +1041,110 @@ export default function AdminTimeseriesUploads({
             </div>
           )}
         </div>
+
+        {/* Mobile filter sheet */}
+        <MobileFilterSheet
+          open={filterOpen}
+          onOpenChange={setFilterOpen}
+          initial={{
+            region: filters.region ?? "",
+            year: filters.year ?? "",
+            month: filters.month ?? "",
+            status: filters.status ?? "",
+            search: filters.search ?? "",
+          }}
+          onApply={(v) => {
+            navigate({
+              region: v.region || null,
+              year: v.year || null,
+              month: v.month || null,
+              status: v.status || null,
+              search: v.search || null,
+              page: null,
+            })
+            setFilterOpen(false)
+          }}
+          onReset={() => {
+            navigate({
+              region: null, year: null, month: null,
+              status: null, search: null, page: null,
+            })
+            setFilterOpen(false)
+          }}
+        >
+          {(draft, setDraft) => (
+            <>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Region</span>
+                <Select
+                  value={draft.region}
+                  onChange={(e) => setDraft({ ...draft, region: e.target.value })}
+                >
+                  <option value="">Semua Region</option>
+                  {available_regions.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Tahun</span>
+                <Select
+                  value={draft.year}
+                  onChange={(e) => setDraft({ ...draft, year: e.target.value })}
+                >
+                  <option value="">Semua Tahun</option>
+                  {available_years.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Bulan</span>
+                <Select
+                  value={draft.month}
+                  onChange={(e) => setDraft({ ...draft, month: e.target.value })}
+                >
+                  <option value="">Semua Bulan</option>
+                  {MONTHS.slice(1).map((name, i) => (
+                    <option key={i + 1} value={String(i + 1)}>{name}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Status</span>
+                <Select
+                  value={draft.status}
+                  onChange={(e) => setDraft({ ...draft, status: e.target.value })}
+                >
+                  <option value="">Semua Status</option>
+                  {(["pending", "processing", "completed", "failed", "cancelled"] as const).map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-ink-display">Cari filename</span>
+                <Input
+                  type="search"
+                  value={draft.search}
+                  onChange={(e) => setDraft({ ...draft, search: e.target.value })}
+                />
+              </label>
+            </>
+          )}
+        </MobileFilterSheet>
+
+        {/* Mobile sort sheet */}
+        <MobileSortSheet
+          open={sortOpen}
+          onOpenChange={setSortOpen}
+          current={{ sort, direction }}
+          options={SORT_OPTIONS}
+          onSelect={(opt) => {
+            navigate({ sort: opt.sort, direction: opt.direction })
+            setSortOpen(false)
+          }}
+        />
       </AdminShell>
     </>
   )
@@ -1289,6 +1456,84 @@ function UploadTableRow({
         )}
       </td>
     </tr>
+  )
+}
+
+function UploadCard({
+  upload,
+  filters,
+  sort,
+  direction,
+  selected,
+  onToggleSelect,
+}: {
+  upload: UploadRow
+  filters: Filters
+  sort: string
+  direction: string
+  selected: boolean
+  onToggleSelect: () => void
+}) {
+  const canDelete = upload.status !== "pending" && upload.status !== "processing"
+
+  function handleDelete() {
+    if (!window.confirm(`Hapus "${upload.filename}"?\n\nSemua data transaksi untuk periode ini juga akan dihapus.`)) return
+    const params: Record<string, string> = {}
+    if (filters.region) params.region = filters.region
+    if (filters.year) params.year = filters.year
+    if (filters.month) params.month = filters.month
+    if (filters.status) params.status = filters.status
+    if (filters.search) params.search = filters.search
+    if (sort !== "created_at") params.sort = sort
+    if (direction !== "desc") params.direction = direction
+    router.delete(`/admin/timeseries/uploads/${upload.id}`, { data: params })
+  }
+
+  return (
+    <DataCard>
+      <DataCardHeader>
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <Checkbox
+            checked={selected}
+            onChange={onToggleSelect}
+            disabled={!canDelete}
+            aria-label={`Pilih ${upload.filename}`}
+            className="mt-0.5 shrink-0"
+          />
+          <DataCardTitle>
+            <span className="break-all" title={upload.filename}>{upload.filename}</span>
+          </DataCardTitle>
+        </div>
+        <DataCardStatus>
+          <StatusBadge status={upload.status} />
+        </DataCardStatus>
+      </DataCardHeader>
+      <DataCardGrid>
+        <DataCardField label="Region" value={upload.region} />
+        <DataCardField label="Periode" value={upload.period_label} />
+        <DataCardField
+          label="Baris"
+          value={upload.row_count != null ? upload.row_count.toLocaleString() : "—"}
+        />
+        <DataCardField
+          label="Netto Wise"
+          value={upload.netto_wise_sum != null ? formatNumber(upload.netto_wise_sum) : "—"}
+        />
+        <DataCardField
+          wide
+          label="Diunggah"
+          value={upload.imported_at ? formatDate(upload.imported_at) : formatDate(upload.created_at)}
+        />
+      </DataCardGrid>
+      {canDelete && (
+        <DataCardActions>
+          <Button variant="ghost" size="sm" onClick={handleDelete} className="gap-2 text-red-600">
+            <Trash2 className="h-4 w-4" />
+            Hapus
+          </Button>
+        </DataCardActions>
+      )}
+    </DataCard>
   )
 }
 

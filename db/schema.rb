@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_05_26_600001) do
+ActiveRecord::Schema[8.0].define(version: 2026_05_27_055416) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -405,6 +405,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_05_26_600001) do
     t.index ["user_id"], name: "index_master_product_dist_uploads_on_user_id"
   end
 
+  create_table "pivot_dimension_caches", force: :cascade do |t|
+    t.string "field_name", null: false
+    t.jsonb "values", default: [], null: false
+    t.string "status", default: "empty", null: false
+    t.datetime "refreshed_at"
+    t.text "error_message"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["field_name"], name: "index_pivot_dimension_caches_on_field_name", unique: true
+  end
+
   create_table "sessions", force: :cascade do |t|
     t.integer "user_id", null: false
     t.string "ip_address"
@@ -656,8 +667,15 @@ ActiveRecord::Schema[8.0].define(version: 2026_05_26_600001) do
     t.string "sap_customer_sub_group"
     t.string "sap_customer_sub_group_2"
     t.string "shipping_point"
+    t.index ["area_name"], name: "index_timeseries_transactions_on_area_name"
+    t.index ["brand_group_name"], name: "index_timeseries_transactions_on_brand_group_name"
+    t.index ["brand_name"], name: "index_timeseries_transactions_on_brand_name"
+    t.index ["channel_code"], name: "index_timeseries_transactions_on_channel_code"
+    t.index ["channel_sub_code"], name: "index_timeseries_transactions_on_channel_sub_code"
     t.index ["date_transaction"], name: "index_timeseries_transactions_on_date_transaction"
+    t.index ["flag_program"], name: "index_timeseries_transactions_on_flag_program"
     t.index ["region", "period_year", "period_month"], name: "idx_on_region_period_year_period_month_969d6bca67"
+    t.index ["region_name"], name: "index_timeseries_transactions_on_region_name"
     t.index ["timeseries_upload_id"], name: "index_timeseries_transactions_on_timeseries_upload_id"
   end
 
