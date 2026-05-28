@@ -50,6 +50,7 @@ node_modules
 # Editor / AI tool local config
 /.claude/
 /.kilo/
+/.playwright-mcp/
 
 # Local backup files
 *.bak

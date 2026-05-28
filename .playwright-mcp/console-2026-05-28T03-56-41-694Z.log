@@ -1,3 +1,0 @@
-[    1363ms] [WARNING] Encryption is not supported in this environment. SSL is required. @ http://72.61.140.62:3000/vite/assets/inertia-DIXUHlJ0.js:11
-[    1406ms] Error: Unable to encrypt history
-    at Af (http://72.61.140.62:3000/vite/assets/inertia-DIXUHlJ0.js:12:7538)
