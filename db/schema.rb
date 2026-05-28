@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_05_27_055416) do
+ActiveRecord::Schema[8.0].define(version: 2026_05_28_023000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -674,6 +674,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_05_27_055416) do
     t.index ["channel_sub_code"], name: "index_timeseries_transactions_on_channel_sub_code"
     t.index ["date_transaction"], name: "index_timeseries_transactions_on_date_transaction"
     t.index ["flag_program"], name: "index_timeseries_transactions_on_flag_program"
+    t.index ["period_year", "period_month"], name: "index_timeseries_transactions_on_period_year_and_period_month"
     t.index ["region", "period_year", "period_month"], name: "idx_on_region_period_year_period_month_969d6bca67"
     t.index ["region_name"], name: "index_timeseries_transactions_on_region_name"
     t.index ["timeseries_upload_id"], name: "index_timeseries_transactions_on_timeseries_upload_id"
