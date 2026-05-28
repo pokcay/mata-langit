@@ -2,7 +2,15 @@
 
 InertiaRails.configure do |config|
   config.version = ViteRuby.digest
-  config.encrypt_history = true
+
+  # Inertia v2 history encryption requires window.crypto.subtle, which the
+  # browser only exposes in "secure contexts" (HTTPS, or localhost). On a
+  # plain-HTTP deploy the client throws "Unable to encrypt history" and form
+  # submissions silently fail. Default to enabled (works for localhost dev,
+  # tests, and any HTTPS deploy) and let plain-HTTP environments opt out via
+  # INERTIA_ENCRYPT_HISTORY=false in .env.
+  config.encrypt_history = ENV.fetch("INERTIA_ENCRYPT_HISTORY", "true") == "true"
+
   config.always_include_errors_hash = true
 
   # Server-side rendering. Inertia POSTs the page name + props to the SSR
