@@ -47,6 +47,10 @@ services:
       # Direct http://IP:3000 access without TLS — set true once HTTPS + domain are ready.
       FORCE_SSL: ${FORCE_SSL:-false}
       ASSUME_SSL: ${ASSUME_SSL:-false}
+      # Inertia v2 history encryption requires window.crypto.subtle (HTTPS or
+      # localhost only). Set to "false" for plain-HTTP deploys so form posts
+      # don't break with "Unable to encrypt history".
+      INERTIA_ENCRYPT_HISTORY: ${INERTIA_ENCRYPT_HISTORY:-true}
       MAIL_FROM: ${MAIL_FROM:-App <onboarding@resend.dev>}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
     depends_on:
