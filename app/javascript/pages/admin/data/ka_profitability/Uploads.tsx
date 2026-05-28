@@ -28,6 +28,7 @@ import {
 import { MobileFilterSheet } from "@/components/ui/mobile-filter-sheet"
 import { MobileFilterSortBar } from "@/components/ui/mobile-filter-sort-bar"
 import { MobileSortSheet, type SortOption } from "@/components/ui/mobile-sort-sheet"
+import { useMobileFilterSort } from "@/hooks/use-mobile-filter-sort"
 import { Select } from "@/components/ui/select"
 import { consumer } from "@/lib/actioncable"
 import {
@@ -196,9 +197,8 @@ export default function AdminKaProfitabilityUploads({
   React.useEffect(() => { setLiveUploads(uploads) }, [uploads])
 
   // Mobile filter / sort sheets
-  const [filterOpen, setFilterOpen] = React.useState(false)
-  const [sortOpen, setSortOpen]     = React.useState(false)
-  const activeFilterCount = [filters.status, filters.fiscal_year].filter(Boolean).length
+  const { filterOpen, setFilterOpen, sortOpen, setSortOpen, activeFilterCount, applyFilters, resetFilters } =
+    useMobileFilterSort(filters, navigate, [ "status", "fiscal_year" ] as const)
   const sortLabel =
     SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction)?.label ?? "Urutkan"
 
@@ -897,18 +897,8 @@ export default function AdminKaProfitabilityUploads({
             status: filters.status ?? "",
             fiscal_year: filters.fiscal_year ?? "",
           }}
-          onApply={(values) => {
-            navigate({
-              status: values.status || undefined,
-              fiscal_year: values.fiscal_year || undefined,
-              page: undefined,
-            })
-            setFilterOpen(false)
-          }}
-          onReset={() => {
-            navigate({ status: undefined, fiscal_year: undefined, page: undefined })
-            setFilterOpen(false)
-          }}
+          onApply={applyFilters}
+          onReset={resetFilters}
         >
           {(draft, setDraft) => (
             <>

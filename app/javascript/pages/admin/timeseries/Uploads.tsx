@@ -34,6 +34,7 @@ import { Input } from "@/components/ui/input"
 import { MobileFilterSheet } from "@/components/ui/mobile-filter-sheet"
 import { MobileFilterSortBar } from "@/components/ui/mobile-filter-sort-bar"
 import { MobileSortSheet, type SortOption } from "@/components/ui/mobile-sort-sheet"
+import { useMobileFilterSort } from "@/hooks/use-mobile-filter-sort"
 import { Select } from "@/components/ui/select"
 import { consumer } from "@/lib/actioncable"
 
@@ -574,11 +575,8 @@ export default function AdminTimeseriesUploads({
   const totalPages = Math.ceil(total / per_page)
 
   // Mobile filter / sort sheets
-  const [filterOpen, setFilterOpen] = React.useState(false)
-  const [sortOpen, setSortOpen]     = React.useState(false)
-  const activeFilterCount = [
-    filters.region, filters.year, filters.month, filters.status, filters.search,
-  ].filter(Boolean).length
+  const { filterOpen, setFilterOpen, sortOpen, setSortOpen, activeFilterCount, applyFilters, resetFilters } =
+    useMobileFilterSort(filters, navigate, [ "region", "year", "month", "status", "search" ] as const)
   const sortLabel =
     SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction)?.label ?? "Urutkan"
 
@@ -1053,24 +1051,8 @@ export default function AdminTimeseriesUploads({
             status: filters.status ?? "",
             search: filters.search ?? "",
           }}
-          onApply={(v) => {
-            navigate({
-              region: v.region || null,
-              year: v.year || null,
-              month: v.month || null,
-              status: v.status || null,
-              search: v.search || null,
-              page: null,
-            })
-            setFilterOpen(false)
-          }}
-          onReset={() => {
-            navigate({
-              region: null, year: null, month: null,
-              status: null, search: null, page: null,
-            })
-            setFilterOpen(false)
-          }}
+          onApply={applyFilters}
+          onReset={resetFilters}
         >
           {(draft, setDraft) => (
             <>

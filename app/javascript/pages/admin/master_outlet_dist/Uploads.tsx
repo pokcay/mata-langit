@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input"
 import { MobileFilterSheet } from "@/components/ui/mobile-filter-sheet"
 import { MobileFilterSortBar } from "@/components/ui/mobile-filter-sort-bar"
 import { MobileSortSheet, type SortOption } from "@/components/ui/mobile-sort-sheet"
+import { useMobileFilterSort } from "@/hooks/use-mobile-filter-sort"
 import { Select } from "@/components/ui/select"
 import { consumer } from "@/lib/actioncable"
 
@@ -470,9 +471,8 @@ export default function AdminMasterOutletDistUploads({
   const hasActiveFilter = !!(filters.dist_name || filters.status || filters.search)
 
   // Mobile filter / sort sheets
-  const [filterOpen, setFilterOpen] = React.useState(false)
-  const [sortOpen, setSortOpen]     = React.useState(false)
-  const activeFilterCount = [filters.dist_name, filters.status, filters.search].filter(Boolean).length
+  const { filterOpen, setFilterOpen, sortOpen, setSortOpen, activeFilterCount, applyFilters, resetFilters } =
+    useMobileFilterSort(filters, navigate, [ "dist_name", "status", "search" ] as const)
   const sortLabel =
     SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction)?.label ?? "Urutkan"
   const totalPages = Math.ceil(total / per_page)
@@ -857,19 +857,8 @@ export default function AdminMasterOutletDistUploads({
             status: filters.status ?? "",
             search: filters.search ?? "",
           }}
-          onApply={(v) => {
-            navigate({
-              dist_name: v.dist_name || null,
-              status: v.status || null,
-              search: v.search || null,
-              page: null,
-            })
-            setFilterOpen(false)
-          }}
-          onReset={() => {
-            navigate({ dist_name: null, status: null, search: null, page: null })
-            setFilterOpen(false)
-          }}
+          onApply={applyFilters}
+          onReset={resetFilters}
         >
           {(draft, setDraft) => (
             <>

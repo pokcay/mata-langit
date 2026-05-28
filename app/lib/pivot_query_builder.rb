@@ -46,8 +46,7 @@ class PivotQueryBuilder
   MAX_COL_VALUES   = 500
   MAX_COL_DISPLAY  = 100
 
-  # Cache TTL for dimension catalog and result sets.
-  CATALOG_TTL = 4.hours
+  # TTL for cached /admin/pivot/generate result rows in Rails.cache.
   RESULT_TTL  = 4.hours
 
   def initialize(row_fields:, col_fields:, measurement:, agg_func:, filters: {}, period_filter: nil)
@@ -136,49 +135,6 @@ class PivotQueryBuilder
   rescue ActiveRecord::StatementInvalid
     # Table may not exist yet (during migrations) — fall through to DB query.
     nil
-  end
-
-  # Builds a dimension catalog — distinct values for every dimension and filter-only field —
-  # scoped by period_filter. Runs field queries in parallel batches of 5.
-  #
-  # Results are cached in Rails.cache (Solid Cache) keyed on the period_filter config.
-  # TTL: CATALOG_TTL (4 hours). Call PivotQueryBuilder.invalidate_catalog_cache! to bust.
-  def self.build_dimension_catalog(period_filter: nil)
-    pf_key    = (period_filter || {}).transform_keys(&:to_s).sort.to_h
-    cache_key = "pivot_dimension_catalog/v2/#{Digest::SHA256.hexdigest(pf_key.to_json)}"
-
-    Rails.cache.fetch(cache_key, expires_in: CATALOG_TTL) do
-      all_fields = (ALLOWED_DIMENSION_FIELDS.to_a + FILTER_ONLY_FIELDS.to_a).sort
-      result     = {}
-      mutex      = Mutex.new
-
-      all_fields.each_slice(5) do |batch|
-        threads = batch.map do |field|
-          Thread.new do
-            ActiveRecord::Base.connection_pool.with_connection do
-              inst   = new(row_fields: [], col_fields: [], measurement: "netto_wise",
-                           agg_func: "sum", period_filter: period_filter, filters: {})
-              values = inst.send(:fetch_distinct_values, field)
-              mutex.synchronize { result[field] = values }
-            end
-          rescue => e
-            Rails.logger.warn "[PivotQueryBuilder.build_dimension_catalog] #{field}: #{e.message}"
-            mutex.synchronize { result[field] = [] }
-          end
-        end
-        threads.each(&:join)
-      end
-
-      result
-    end
-  end
-
-  # Deletes all pivot dimension catalog cache entries (call after data uploads).
-  def self.invalidate_catalog_cache!
-    Rails.cache.delete_matched("pivot_dimension_catalog/*")
-  rescue NotImplementedError
-    # Some cache stores don't support delete_matched; safe to ignore.
-    Rails.logger.warn "[PivotQueryBuilder] cache store doesn't support delete_matched; catalog not invalidated"
   end
 
   private

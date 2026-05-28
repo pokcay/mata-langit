@@ -26,6 +26,7 @@ import {
 import { MobileFilterSheet } from "@/components/ui/mobile-filter-sheet"
 import { MobileFilterSortBar } from "@/components/ui/mobile-filter-sort-bar"
 import { MobileSortSheet, type SortOption } from "@/components/ui/mobile-sort-sheet"
+import { useMobileFilterSort } from "@/hooks/use-mobile-filter-sort"
 
 const SORT_OPTIONS: SortOption[] = [
   { sort: "created_at", direction: "desc", label: "Tanggal terbaru" },
@@ -523,11 +524,9 @@ export default function AdminTransSelloutAccountUploads({
     !!filters.status || !!filters.search
 
   // Mobile filter / sort sheets
-  const [filterOpen, setFilterOpen] = React.useState(false)
-  const [sortOpen, setSortOpen]     = React.useState(false)
-  const activeFilterCount = [
-    filters.distributor_code, filters.year, filters.month, filters.status, filters.search,
-  ].filter(Boolean).length
+  const { filterOpen, setFilterOpen, sortOpen, setSortOpen, activeFilterCount, applyFilters, resetFilters } =
+    useMobileFilterSort(filters, navigate,
+      [ "distributor_code", "year", "month", "status", "search" ] as const)
   const sortLabel =
     SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction)?.label ?? "Urutkan"
   const totalPages = Math.ceil(total / per_page)
@@ -943,24 +942,8 @@ export default function AdminTransSelloutAccountUploads({
             status: filters.status ?? "",
             search: filters.search ?? "",
           }}
-          onApply={(v) => {
-            navigate({
-              distributor_code: v.distributor_code || null,
-              year: v.year || null,
-              month: v.month || null,
-              status: v.status || null,
-              search: v.search || null,
-              page: null,
-            })
-            setFilterOpen(false)
-          }}
-          onReset={() => {
-            navigate({
-              distributor_code: null, year: null, month: null,
-              status: null, search: null, page: null,
-            })
-            setFilterOpen(false)
-          }}
+          onApply={applyFilters}
+          onReset={resetFilters}
         >
           {(draft, setDraft) => (
             <>
