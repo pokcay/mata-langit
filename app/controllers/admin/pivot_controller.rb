@@ -124,10 +124,15 @@ class Admin::PivotController < Admin::BaseController
     }.freeze
 
     # Stable cache key for a pivot result based on the builder parameters.
+    #
+    # row_fields and col_fields are NOT sorted — their order is semantically
+    # significant (it determines row-dimension nesting and column-header
+    # nesting in the output), so cache keys must distinguish between
+    # ["region", "brand"] and ["brand", "region"].
     def result_cache_key(builder_params)
       normalized = {
-        row_fields:    Array(builder_params[:row_fields]).sort,
-        col_fields:    Array(builder_params[:col_fields]).sort,
+        row_fields:    Array(builder_params[:row_fields]),
+        col_fields:    Array(builder_params[:col_fields]),
         measurement:   builder_params[:measurement].to_s,
         agg_func:      builder_params[:agg_func].to_s,
         period_filter: (builder_params[:period_filter] || {}).transform_keys(&:to_s).sort.to_h,

@@ -73,8 +73,16 @@ class PivotQueryBuilder
 
     raw_rows        = execute_pivot(conn, col_combos)
     serialized_rows = serialize_rows(raw_rows, col_combos)
-    col_totals      = compute_col_totals(serialized_rows, col_combos)
-    grand_total     = serialized_rows.sum { |r| r[:total].to_f }
+
+    # IMPORTANT: grand_total and col_totals MUST come from a separate aggregate
+    # query — summing per-row pivoted values in Ruby is only correct for SUM/COUNT.
+    # For AVG/MIN/MAX the per-group results don't compose by summing, and for
+    # active_outlet (COUNT DISTINCT outlet_national_code) an outlet appearing in
+    # multiple row groups would be double-counted. The dedicated aggregate query
+    # applies the chosen measurement over the full filtered set without GROUP BY.
+    totals      = fetch_totals(conn, col_combos)
+    grand_total = totals[:grand_total]
+    col_totals  = totals[:col_totals]
 
     {
       column_levels:   col_levels,
@@ -319,12 +327,34 @@ class PivotQueryBuilder
       end
     end
 
-    def compute_col_totals(rows, col_combos)
-      totals = Array.new(col_combos.size, 0.0)
-      rows.each do |row|
-        row[:values].each_with_index { |v, i| totals[i] += v.to_f }
+    # Runs a single aggregate query (no GROUP BY) to get the true grand_total and
+    # per-col_combo totals over the full filtered set. This is the only correct
+    # way to compute footers for AVG/MIN/MAX/active_outlet measurements — summing
+    # per-row pivoted values in Ruby would mis-aggregate them.
+    #
+    # For SUM/COUNT, this produces the same numbers as the previous Ruby sum,
+    # but at the cost of one extra round trip.
+    def fetch_totals(conn, col_combos)
+      col_selects = col_combos.each_with_index.map do |combo, i|
+        conditions = @col_fields.each_with_index.map do |field, fi|
+          expr   = field_sql_expr(field)
+          quoted = conn.quote(combo[fi])
+          "(#{expr}) = #{quoted}"
+        end
+        "#{measure_agg_sql(conditions.join(' AND '))} AS \"col_#{i}\""
       end
-      totals
+
+      total_select = "#{measure_agg_sql} AS \"_total\""
+      all_selects  = (col_selects + [ total_select ]).join(", ")
+      where        = build_where_clause
+
+      sql = "SELECT #{all_selects} FROM timeseries_transactions #{where}"
+      row = conn.exec_query(Arel.sql(sql)).first || {}
+
+      {
+        grand_total: row["_total"].to_f,
+        col_totals:  col_combos.size.times.map { |i| row["col_#{i}"].to_f }
+      }
     end
 
     # Fetches distinct values for a single filterable field, respecting current where_conditions.

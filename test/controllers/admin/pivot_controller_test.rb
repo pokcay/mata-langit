@@ -284,4 +284,39 @@ class Admin::PivotControllerTest < ActionDispatch::IntegrationTest
     assert body["col_warning"].present?
     assert_nil body["error"]
   end
+
+  # ── result_cache_key (private) ────────────────────────────────────────────────
+  # Row/col field ORDER is semantically significant — it determines the row
+  # dimension nesting and column header nesting in the response. The cache key
+  # must distinguish between different orderings so structurally different
+  # pivots don't collide on the same cache entry.
+
+  test "result_cache_key differs for different row_fields ORDER" do
+    controller = Admin::PivotController.new
+    key_a = controller.send(:result_cache_key,
+      row_fields: %w[region brand_name], col_fields: [], measurement: "netto_wise", agg_func: "sum")
+    key_b = controller.send(:result_cache_key,
+      row_fields: %w[brand_name region], col_fields: [], measurement: "netto_wise", agg_func: "sum")
+    refute_equal key_a, key_b, "Row field order must produce different cache keys"
+  end
+
+  test "result_cache_key differs for different col_fields ORDER" do
+    controller = Admin::PivotController.new
+    key_a = controller.send(:result_cache_key,
+      row_fields: [ "region" ], col_fields: %w[FY period_month], measurement: "netto_wise", agg_func: "sum")
+    key_b = controller.send(:result_cache_key,
+      row_fields: [ "region" ], col_fields: %w[period_month FY], measurement: "netto_wise", agg_func: "sum")
+    refute_equal key_a, key_b, "Col field order must produce different cache keys"
+  end
+
+  test "result_cache_key is stable for same parameters" do
+    controller = Admin::PivotController.new
+    key_a = controller.send(:result_cache_key,
+      row_fields: %w[region brand_name], col_fields: %w[FY], measurement: "netto_wise", agg_func: "sum",
+      filters: { "region" => %w[JAVA SUMATRA] })
+    key_b = controller.send(:result_cache_key,
+      row_fields: %w[region brand_name], col_fields: %w[FY], measurement: "netto_wise", agg_func: "sum",
+      filters: { "region" => %w[SUMATRA JAVA] })   # filter values may be re-ordered safely
+    assert_equal key_a, key_b, "Same row/col field order + equivalent filters must produce same cache key"
+  end
 end

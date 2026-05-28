@@ -1,0 +1,81 @@
+# Fixture for testing PivotQueryBuilder correctness.
+#
+# Layout — 6 rows across 2 regions × 1 fiscal year (FY2526, period 2025-04):
+#
+#   region=JAVA, brand_name=AAA:  netto_wise=100, outlet=O1
+#   region=JAVA, brand_name=AAA:  netto_wise=300, outlet=O1   (same outlet, different row)
+#   region=JAVA, brand_name=BBB:  netto_wise=200, outlet=O2
+#   region=SUMA, brand_name=AAA:  netto_wise=400, outlet=O1   (O1 reappears in another region)
+#   region=SUMA, brand_name=BBB:  netto_wise=500, outlet=O3
+#   region=SUMA, brand_name=BBB:  netto_wise=600, outlet=O3   (same outlet, different row)
+#
+# Used to assert grand_total and col_totals are computed by a separate SQL
+# aggregate, NOT by summing per-row pivoted values. The numbers are chosen so
+# that the buggy approach (Ruby sum of group results) gives demonstrably wrong
+# answers for AVG and active_outlet COUNT(DISTINCT).
+
+java_aaa_1:
+  timeseries_upload: completed
+  region: "JAVA"
+  period_year: 2025
+  period_month: 4
+  date_transaction: 2025-04-15
+  brand_name: "AAA"
+  outlet_national_code: "O1"
+  netto_wise: "100.0000"
+  netto_dist: "100.0000"
+
+java_aaa_2:
+  timeseries_upload: completed
+  region: "JAVA"
+  period_year: 2025
+  period_month: 4
+  date_transaction: 2025-04-15
+  brand_name: "AAA"
+  outlet_national_code: "O1"
+  netto_wise: "300.0000"
+  netto_dist: "300.0000"
+
+java_bbb_1:
+  timeseries_upload: completed
+  region: "JAVA"
+  period_year: 2025
+  period_month: 4
+  date_transaction: 2025-04-15
+  brand_name: "BBB"
+  outlet_national_code: "O2"
+  netto_wise: "200.0000"
+  netto_dist: "200.0000"
+
+suma_aaa_1:
+  timeseries_upload: completed
+  region: "SUMA"
+  period_year: 2025
+  period_month: 4
+  date_transaction: 2025-04-15
+  brand_name: "AAA"
+  outlet_national_code: "O1"
+  netto_wise: "400.0000"
+  netto_dist: "400.0000"
+
+suma_bbb_1:
+  timeseries_upload: completed
+  region: "SUMA"
+  period_year: 2025
+  period_month: 4
+  date_transaction: 2025-04-15
+  brand_name: "BBB"
+  outlet_national_code: "O3"
+  netto_wise: "500.0000"
+  netto_dist: "500.0000"
+
+suma_bbb_2:
+  timeseries_upload: completed
+  region: "SUMA"
+  period_year: 2025
+  period_month: 4
+  date_transaction: 2025-04-15
+  brand_name: "BBB"
+  outlet_national_code: "O3"
+  netto_wise: "600.0000"
+  netto_dist: "600.0000"
