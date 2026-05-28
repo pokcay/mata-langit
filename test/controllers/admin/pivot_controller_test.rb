@@ -44,7 +44,8 @@ class Admin::PivotControllerTest < ActionDispatch::IntegrationTest
   test "generate rejects missing row fields" do
     log_in_as(@admin)
     json_post "/admin/pivot/generate",
-              row_fields: [], col_fields: [], measurement: "netto_wise", agg_func: "sum"
+              row_fields: [], col_fields: [], measurement: "netto_wise", agg_func: "sum",
+              period_filter: { fys: [ "FY9900" ] }
     assert_response :unprocessable_entity
     body = JSON.parse(response.body)
     assert body["error"].present?
@@ -53,21 +54,45 @@ class Admin::PivotControllerTest < ActionDispatch::IntegrationTest
   test "generate rejects invalid field names" do
     log_in_as(@admin)
     json_post "/admin/pivot/generate",
-              row_fields: [ "evil; DROP TABLE--" ], col_fields: [], measurement: "netto_wise", agg_func: "sum"
+              row_fields: [ "evil; DROP TABLE--" ], col_fields: [], measurement: "netto_wise", agg_func: "sum",
+              period_filter: { fys: [ "FY9900" ] }
     assert_response :unprocessable_entity
   end
 
   test "generate rejects invalid measurement" do
     log_in_as(@admin)
     json_post "/admin/pivot/generate",
-              row_fields: [ "region" ], col_fields: [], measurement: "bad_column", agg_func: "sum"
+              row_fields: [ "region" ], col_fields: [], measurement: "bad_column", agg_func: "sum",
+              period_filter: { fys: [ "FY9900" ] }
     assert_response :unprocessable_entity
+  end
+
+  test "generate rejects unscoped queries (no period_filter and no filters)" do
+    log_in_as(@admin)
+    json_post "/admin/pivot/generate",
+              row_fields: [ "region" ], col_fields: [], measurement: "netto_wise", agg_func: "sum"
+    assert_response :unprocessable_entity
+    body = JSON.parse(response.body)
+    assert_match(/period filter|filter dimensi/i, body["error"])
+  end
+
+  test "generate accepts query scoped by filters alone (no period_filter)" do
+    log_in_as(@admin)
+    json_post "/admin/pivot/generate", {
+      row_fields:  [ "region" ],
+      col_fields:  [],
+      measurement: "netto_wise",
+      agg_func:    "sum",
+      filters:     { "region" => [ "JAVA" ] }
+    }
+    assert_response :success
   end
 
   test "generate returns valid JSON structure for flat summary" do
     log_in_as(@admin)
     json_post "/admin/pivot/generate",
-              row_fields: [ "region" ], col_fields: [], measurement: "netto_wise", agg_func: "sum"
+              row_fields: [ "region" ], col_fields: [], measurement: "netto_wise", agg_func: "sum",
+              period_filter: { fys: [ "FY9900" ] }
     assert_response :success
     body = JSON.parse(response.body)
     assert body.key?("column_levels")
@@ -181,6 +206,34 @@ class Admin::PivotControllerTest < ActionDispatch::IntegrationTest
     assert_equal [], body["values"]
   end
 
+  test "filter_values returns cached values from PivotDimensionCache when unscoped" do
+    log_in_as(@admin)
+    PivotDimensionCache.create!(
+      field_name: "region", status: "ready", values: %w[CACHED_JAVA CACHED_SUMA]
+    )
+    # No period_filter, no filters → should serve from the cache row above
+    # without hitting timeseries_transactions.
+    get "/admin/pivot/filter_values", params: { field: "region" }
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal %w[CACHED_JAVA CACHED_SUMA], body["values"]
+  end
+
+  test "filter_values ignores cache when period_filter is present (scoped query)" do
+    log_in_as(@admin)
+    PivotDimensionCache.create!(
+      field_name: "region", status: "ready", values: %w[CACHED_JAVA CACHED_SUMA]
+    )
+    get "/admin/pivot/filter_values", params: {
+      field:         "region",
+      period_filter: { fys: [ "FY9900" ], months: [ 4 ], start_day: 1, end_day: "eom" }
+    }
+    assert_response :success
+    body = JSON.parse(response.body)
+    refute_equal %w[CACHED_JAVA CACHED_SUMA], body["values"],
+      "Cached values must not be returned when a period_filter is active"
+  end
+
   # ── export ────────────────────────────────────────────────────────────────────
 
   test "export requires authentication" do
@@ -208,7 +261,8 @@ class Admin::PivotControllerTest < ActionDispatch::IntegrationTest
   test "export rejects invalid config" do
     log_in_as(@admin)
     json_post "/admin/pivot/export",
-              row_fields: [], col_fields: [], measurement: "netto_wise", agg_func: "sum"
+              row_fields: [], col_fields: [], measurement: "netto_wise", agg_func: "sum",
+              period_filter: { fys: [ "FY9900" ] }
     assert_response :unprocessable_entity
     body = JSON.parse(response.body)
     assert body["error"].present?

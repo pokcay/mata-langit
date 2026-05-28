@@ -96,7 +96,24 @@ class PivotQueryBuilder
 
   # Returns distinct values for a filterable field, optionally scoped by existing filters and period filter.
   # Used by the filter_values controller action to populate multi-select dropdowns.
+  #
+  # When the request is unscoped (no period_filter AND no filters) we serve from
+  # the persistent PivotDimensionCache instead of hitting the 45M-row fact table —
+  # the catalog already has the full distinct list for cached fields.
   def self.distinct_values(field:, filters: {}, period_filter: nil)
+    field         = field.to_s
+    flt           = (filters || {}).transform_keys(&:to_s)
+    pf            = (period_filter || {}).transform_keys(&:to_s)
+    fys           = Array(pf["fys"]).map(&:to_s).select { |v| v.match?(/\AFY\d{4}\z/) }
+    months        = Array(pf["months"]).map(&:to_i).select { |m| (1..12).cover?(m) }
+    has_period    = fys.any? || months.any?
+    has_filters   = flt.any? { |_, values| Array(values).map(&:to_s).any?(&:present?) }
+
+    if !has_period && !has_filters
+      cached = cached_distinct_values(field)
+      return cached if cached
+    end
+
     instance = new(
       row_fields:    [],
       col_fields:    [],
@@ -106,6 +123,19 @@ class PivotQueryBuilder
       period_filter: period_filter
     )
     instance.send(:fetch_distinct_values, field)
+  end
+
+  # Reads distinct values for `field` from PivotDimensionCache (if present and
+  # `ready`). Returns nil when the cache row is missing, building, or errored —
+  # the caller should fall back to a scoped DB query.
+  def self.cached_distinct_values(field)
+    return nil unless defined?(PivotDimensionCache)
+
+    row = PivotDimensionCache.find_by(field_name: field.to_s, status: "ready")
+    row&.values
+  rescue ActiveRecord::StatementInvalid
+    # Table may not exist yet (during migrations) — fall through to DB query.
+    nil
   end
 
   # Builds a dimension catalog — distinct values for every dimension and filter-only field —
@@ -174,6 +204,24 @@ class PivotQueryBuilder
       if %w[netto_wise netto_dist].include?(@measurement)
         raise InvalidConfigError, "Invalid aggregation function: #{@agg_func}" unless ALLOWED_AGG_FUNCS.include?(@agg_func)
       end
+
+      # Refuse to run unscoped queries against the 45M-row fact table. At least one of
+      # period_filter (fys/months) or a non-empty filter must be present so the planner
+      # can use an index instead of falling back to a full sequential scan.
+      raise InvalidConfigError, "Period filter (FY/months) atau filter dimensi wajib diisi" if scope_is_empty?
+    end
+
+    # True when neither period_filter nor regular filters would produce any WHERE
+    # clause condition — i.e. the query would scan the entire fact table.
+    def scope_is_empty?
+      pf  = (@period_filter || {}).transform_keys(&:to_s)
+      fys = Array(pf["fys"]).map(&:to_s).select { |v| v.match?(/\AFY\d{4}\z/) }
+      months = Array(pf["months"]).map(&:to_i).select { |m| (1..12).cover?(m) }
+
+      has_period_scope = fys.any? || months.any?
+      has_filter_scope = @filters.any? { |_field, values| Array(values).map(&:to_s).any?(&:present?) }
+
+      !(has_period_scope || has_filter_scope)
     end
 
     # ---------------------------------------------------------------------------
@@ -224,11 +272,21 @@ class PivotQueryBuilder
         start_day = (pf["start_day"].presence || 1).to_i.clamp(1, 31)
         end_day   = pf["end_day"].to_s
 
-        if end_day == "eom"
-          conditions << "EXTRACT(DAY FROM date_transaction) BETWEEN #{start_day} AND #{EOM_SQL_EXPR}"
-        else
-          end_day_int = end_day.to_i.clamp(1, 31)
-          conditions << "EXTRACT(DAY FROM date_transaction) BETWEEN #{start_day} AND #{end_day_int}"
+        # Skip the day-range predicate entirely for the full-month case
+        # (start_day=1, end_day="eom") — by far the most common Pivot setting.
+        # The period_year/period_month conditions above already restrict the
+        # result to those whole months, and EXTRACT(DAY FROM date_transaction)
+        # is non-sargable so omitting it lets the planner stay on the
+        # (period_year, period_month) index without any filter step.
+        full_month = (start_day == 1 && end_day == "eom")
+
+        unless full_month
+          if end_day == "eom"
+            conditions << "EXTRACT(DAY FROM date_transaction) BETWEEN #{start_day} AND #{EOM_SQL_EXPR}"
+          else
+            end_day_int = end_day.to_i.clamp(1, 31)
+            conditions << "EXTRACT(DAY FROM date_transaction) BETWEEN #{start_day} AND #{end_day_int}"
+          end
         end
       end
 
