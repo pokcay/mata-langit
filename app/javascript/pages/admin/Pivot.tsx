@@ -218,6 +218,35 @@ function formatNum(n: number | null | undefined): string {
   return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 }).format(n)
 }
 
+// Compact Indonesian notation for tight mobile cells: Rb (ribu) / Jt (juta) /
+// M (miliar) / T (triliun). One decimal, comma as the decimal separator, sign-aware.
+// Values below 1.000 fall back to the full grouped format.
+function formatCompact(n: number | null | undefined): string {
+  if (n == null) return "—"
+  const abs = Math.abs(n)
+  if (abs < 1000) return formatNum(n)
+  const sign = n < 0 ? "-" : ""
+  const units: [number, string][] = [
+    [1e12, "T"],
+    [1e9, "M"],
+    [1e6, "Jt"],
+    [1e3, "Rb"],
+  ]
+  for (const [factor, suffix] of units) {
+    if (abs >= factor) {
+      const scaled = abs / factor
+      // Drop the decimal once the value is large enough that it adds no precision.
+      const decimals = scaled >= 100 ? 0 : 1
+      const num = new Intl.NumberFormat("id-ID", {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      }).format(scaled)
+      return `${sign}${num} ${suffix}`
+    }
+  }
+  return formatNum(n)
+}
+
 function fieldLabel(key: string): string {
   return ALL_FIELDS.find((f) => f.key === key)?.label ?? key
 }
@@ -300,6 +329,22 @@ export default function Pivot() {
   const [error, setError] = useState<string | null>(null)
   const [colWarning, setColWarning] = useState<string | null>(null)
   const [result, setResult] = useState<PivotResult | null>(null)
+
+  // Mobile-only (md and below): which of the three tabs is visible. Seeded to
+  // "result" when the URL already carries a complete, auto-runnable config so the
+  // mount-time auto-generate lands the user on the rendered table. Never serialized.
+  const [mobileTab, setMobileTab] = useState<"config" | "filter" | "result">(() =>
+    initFromUrl(
+      (c) =>
+        c.rowFields.length > 0 &&
+        c.measurement !== null &&
+        c.periodFilter.fys.length > 0 &&
+        c.periodFilter.months.length > 0,
+      false
+    )
+      ? "result"
+      : "config"
+  )
 
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>(() =>
     initFromUrl((c) => c.periodFilter, DEFAULT_PERIOD_FILTER)
@@ -574,6 +619,320 @@ export default function Pivot() {
     executeGenerate({ rowFields, colFields, measurement: measurement!, aggFunc, periodFilter, filters })
   }
 
+  // Hint shown beneath the Generate button while requirements are unmet.
+  // Shared verbatim between the desktop footer and the mobile sticky bar.
+  const generateHint = !canGenerate
+    ? rowFields.length === 0
+      ? "Pilih min. 1 baris + ukuran"
+      : measurement === null
+        ? "Pilih ukuran"
+        : periodFilter.fys.length === 0
+          ? "Pilih min. 1 FY di Period Filter"
+          : "Pilih min. 1 bulan di Period Filter"
+    : null
+
+  // ── Shared render helpers ───────────────────────────────────────────────
+  // Defined as closures over component state so the desktop sidebar and the
+  // mobile three-tab layout render byte-identical markup with no prop threading.
+  // `mobile` parametrizes the few spots that differ (unique element ids,
+  // always-visible R/K/F buttons, compact-number table).
+
+  const renderZones = () => (
+    <>
+      <Zone
+        label="Baris (Rows)"
+        emptyText="Pilih field di bawah"
+        chips={rowFields.map((key) => ({ key, label: fieldLabel(key), onRemove: () => removeRow(key) }))}
+      />
+      <Zone
+        label="Kolom (Columns)"
+        emptyText="Opsional — satu atau lebih field"
+        chips={colFields.map((key) => ({ key, label: fieldLabel(key), onRemove: () => removeCol(key) }))}
+      />
+    </>
+  )
+
+  const renderMeasurement = (mobile: boolean) => {
+    const aggId = mobile ? "agg-func-m" : "agg-func"
+    return (
+      <div>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Ukuran</p>
+        <div className="space-y-1">
+          {MEASUREMENTS.map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => setMeasurement(m.key)}
+              className={cn(
+                "w-full rounded-md px-3 text-left text-sm transition-colors",
+                mobile ? "min-h-11 py-2.5" : "py-2",
+                measurement === m.key
+                  ? "bg-accent/10 text-accent font-medium"
+                  : "text-ink-body hover:bg-surface"
+              )}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        {selectedMeasurement?.supportsAgg && (
+          <div className="mt-2">
+            <label htmlFor={aggId} className="font-normal text-ink-body">
+              <span className="text-xs text-ink-muted">Fungsi agregasi</span>
+            </label>
+            <Select
+              id={aggId}
+              value={aggFunc}
+              onChange={(e) => setAggFunc(e.target.value)}
+              className={cn("mt-1", mobile ? "" : "text-sm")}
+            >
+              {AGG_FUNCS.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const renderPeriodFilter = () => (
+    <div>
+      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">
+        Period Filter{" "}
+        <span className="text-[10px] font-normal normal-case text-red-500">* wajib</span>
+      </p>
+      <div className="space-y-2">
+        <div>
+          <p className="mb-1 text-[11px] text-ink-muted">Fiscal Year</p>
+          <MultiSelect
+            options={fyOptions}
+            selected={periodFilter.fys}
+            loading={catalogFetching && fyOptions.length === 0}
+            placeholder={
+              catalogFetching
+                ? "Memuat katalog…"
+                : fyOptions.length === 0
+                  ? "Refresh katalog terlebih dahulu"
+                  : "Pilih FY…"
+            }
+            onChange={(vals) => setPeriodFilter((prev) => ({ ...prev, fys: vals }))}
+          />
+        </div>
+        <div>
+          <p className="mb-1 text-[11px] text-ink-muted">Bulan</p>
+          <MultiSelect
+            options={MONTH_OPTIONS}
+            selected={periodFilter.months.map(String)}
+            loading={false}
+            placeholder="Pilih bulan…"
+            onChange={(vals) => setPeriodFilter((prev) => ({ ...prev, months: vals.map(Number) }))}
+          />
+        </div>
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <p className="mb-1 text-[11px] text-ink-muted">Dari tgl</p>
+            <Select
+              value={String(periodFilter.startDay)}
+              onChange={(e) => setPeriodFilter((prev) => ({ ...prev, startDay: Number(e.target.value) }))}
+              className="text-xs"
+            >
+              {DAY_OPTIONS.map((d) => (
+                <option key={d} value={String(d)}>
+                  {d}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="flex-1">
+            <p className="mb-1 text-[11px] text-ink-muted">Sampai tgl</p>
+            <Select
+              value={periodFilter.endDay === "eom" ? "eom" : String(periodFilter.endDay)}
+              onChange={(e) => {
+                const v = e.target.value
+                setPeriodFilter((prev) => ({ ...prev, endDay: v === "eom" ? "eom" : Number(v) }))
+              }}
+              className="text-xs"
+            >
+              {DAY_OPTIONS.map((d) => (
+                <option key={d} value={String(d)}>
+                  {d}
+                </option>
+              ))}
+              <option value="eom">Akhir Bulan</option>
+            </Select>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderActiveFilters = () =>
+    filters.length > 0 && (
+      <div>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Filter Aktif</p>
+        <div className="space-y-3">
+          {filters.map((fc) => {
+            const catalogVals = catalog[fc.field]
+            const catalogOpts = catalogVals?.map((v) => ({ value: v, label: v }))
+            const onDemandOpts = filterOptions[fc.field] ?? []
+            const opts = catalogOpts ?? onDemandOpts
+            const isLoadingOpts = !catalogOpts && (filterLoading[fc.field] ?? false)
+            const isBuilding = catalogStatus?.building && !catalogVals
+
+            return (
+              <div key={fc.field} className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-ink-body">{fieldLabel(fc.field)}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeFilter(fc.field)}
+                    className="rounded p-0.5 text-ink-muted hover:bg-surface hover:text-ink-body"
+                    aria-label={`Hapus filter ${fieldLabel(fc.field)}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+                <MultiSelect
+                  options={opts}
+                  selected={fc.values}
+                  loading={isBuilding || isLoadingOpts}
+                  placeholder={isBuilding ? "Membangun katalog…" : "Pilih nilai…"}
+                  onChange={(vals) => updateFilterValues(fc.field, vals)}
+                  onOpen={catalogOpts ? undefined : () => loadFilterValues(fc.field)}
+                />
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+
+  const renderFieldPicker = (mobile: boolean) => (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Fields</p>
+        <button
+          type="button"
+          disabled={catalogStatus?.building ?? false}
+          onClick={triggerRefreshCatalog}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-ink-muted hover:bg-surface hover:text-ink-body disabled:opacity-50"
+          title="Rebuild katalog nilai dimension dari database"
+        >
+          {catalogStatus?.building ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {catalogStatus.ready}/{catalogStatus.total}
+            </>
+          ) : (
+            <>
+              <RefreshCw className="h-3 w-3" />
+              {catalogStatus?.refreshed_at
+                ? formatRelativeTime(new Date(catalogStatus.refreshed_at))
+                : "Refresh"}
+            </>
+          )}
+        </button>
+      </div>
+      {catalogStatus?.building && (
+        <div className="mb-2 h-1 w-full overflow-hidden rounded-full bg-surface">
+          <div
+            className="h-full rounded-full bg-accent/60 transition-all duration-300"
+            style={{ width: `${catalogStatus.pct}%` }}
+          />
+        </div>
+      )}
+      <Input
+        type="search"
+        placeholder="Cari field…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className={cn("mb-2", mobile ? "" : "text-sm")}
+      />
+      <div className="space-y-1">
+        {filteredGroups.map((group) => (
+          <FieldGroupAccordion
+            key={group.label}
+            group={group}
+            open={search ? true : (openGroups[group.label] ?? true)}
+            onToggle={() => toggleGroup(group.label)}
+            rowFields={rowFields}
+            colFields={colFields}
+            filterFields={filterFieldsSet}
+            mobile={mobile}
+            onAddRow={addToRow}
+            onAddCol={addToCol}
+            onAddFilter={addFilter}
+          />
+        ))}
+        {filterOnlyVisible.length > 0 && (
+          <div className="rounded-md border border-hairline">
+            <button
+              type="button"
+              onClick={() => toggleGroup("Filter Only")}
+              className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-ink-muted hover:bg-surface rounded-md"
+            >
+              Filter Only
+              {openGroups["Filter Only"] ? (
+                <ChevronDown className="h-3 w-3" />
+              ) : (
+                <ChevronRight className="h-3 w-3" />
+              )}
+            </button>
+            {(search || openGroups["Filter Only"]) && (
+              <div className="border-t border-hairline">
+                {filterOnlyVisible.map((field) => (
+                  <FieldRow
+                    key={field.key}
+                    field={field}
+                    inRow={false}
+                    inCol={false}
+                    inFilter={filterFieldsSet.has(field.key)}
+                    isFilterOnly
+                    mobile={mobile}
+                    onAddRow={() => {}}
+                    onAddCol={() => {}}
+                    onAddFilter={() => addFilter(field.key)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  const renderResultStates = (mobile: boolean) => (
+    <>
+      {!loading && !error && !colWarning && !result &&
+        (mobile ? (
+          <div className="flex h-full min-h-48 flex-col items-center justify-center px-6 text-center">
+            <p className="text-sm font-medium text-ink-display">Belum ada hasil</p>
+            <p className="mt-1 text-xs text-ink-muted">Tap Generate untuk lihat hasil.</p>
+          </div>
+        ) : (
+          <BlankState />
+        ))}
+      {loading && <SkeletonTable />}
+      {colWarning && !loading && (
+        <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{colWarning}</span>
+        </div>
+      )}
+      {error && (
+        <div className="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+      {result && !loading && <PivotTable result={result} rowFields={rowFields} mobile={mobile} />}
+    </>
+  )
+
   return (
     <>
       <Head title="Pivot">
@@ -582,311 +941,22 @@ export default function Pivot() {
         <meta property="og:description" content="Interactive pivot table builder for Timeseries data." />
       </Head>
       <AdminShell full>
-        <div className="flex h-[calc(100vh-4rem)] lg:h-screen">
-          {/* ── Config panel ─────────────────────────────────────── */}
+        {/* ── Desktop layout (md and up) — unchanged two-panel ───── */}
+        <div className="hidden h-[calc(100vh-4rem)] md:flex lg:h-screen">
+          {/* Config panel */}
           <aside className="flex w-72 shrink-0 flex-col border-r border-hairline bg-surface">
-            {/* Header */}
             <div className="border-b border-hairline px-4 py-3">
               <h1 className="text-base font-semibold text-ink-display">Pivot</h1>
             </div>
-
-            {/* Scrollable body */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
-              {/* Rows zone */}
-              <Zone
-                label="Baris (Rows)"
-                emptyText="Pilih field di bawah"
-                chips={rowFields.map((key) => ({
-                  key,
-                  label: fieldLabel(key),
-                  onRemove: () => removeRow(key),
-                }))}
-              />
-
-              {/* Columns zone — now supports multiple fields */}
-              <Zone
-                label="Kolom (Columns)"
-                emptyText="Opsional — satu atau lebih field"
-                chips={colFields.map((key) => ({
-                  key,
-                  label: fieldLabel(key),
-                  onRemove: () => removeCol(key),
-                }))}
-              />
-
-              {/* Measurement */}
-              <div>
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Ukuran</p>
-                <div className="space-y-1">
-                  {MEASUREMENTS.map((m) => (
-                    <button
-                      key={m.key}
-                      type="button"
-                      onClick={() => setMeasurement(m.key)}
-                      className={cn(
-                        "w-full rounded-md px-3 py-2 text-left text-sm transition-colors",
-                        measurement === m.key
-                          ? "bg-accent/10 text-accent font-medium"
-                          : "text-ink-body hover:bg-surface"
-                      )}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-                {selectedMeasurement?.supportsAgg && (
-                  <div className="mt-2">
-                    <label htmlFor="agg-func" className="font-normal text-ink-body">
-                      <span className="text-xs text-ink-muted">Fungsi agregasi</span>
-                    </label>
-                    <Select
-                      id="agg-func"
-                      value={aggFunc}
-                      onChange={(e) => setAggFunc(e.target.value)}
-                      className="mt-1 text-sm"
-                    >
-                      {AGG_FUNCS.map((f) => (
-                        <option key={f.key} value={f.key}>
-                          {f.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                )}
-              </div>
-
-              {/* Period Filter (mandatory) */}
-              <div>
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">
-                  Period Filter{" "}
-                  <span className="text-[10px] font-normal normal-case text-red-500">* wajib</span>
-                </p>
-                <div className="space-y-2">
-                  {/* Fiscal Year — options come from DB catalog */}
-                  <div>
-                    <p className="mb-1 text-[11px] text-ink-muted">Fiscal Year</p>
-                    <MultiSelect
-                      options={fyOptions}
-                      selected={periodFilter.fys}
-                      loading={catalogFetching && fyOptions.length === 0}
-                      placeholder={catalogFetching ? "Memuat katalog…" : fyOptions.length === 0 ? "Refresh katalog terlebih dahulu" : "Pilih FY…"}
-                      onChange={(vals) =>
-                        setPeriodFilter((prev) => ({ ...prev, fys: vals }))
-                      }
-                    />
-                  </div>
-                  {/* Month */}
-                  <div>
-                    <p className="mb-1 text-[11px] text-ink-muted">Bulan</p>
-                    <MultiSelect
-                      options={MONTH_OPTIONS}
-                      selected={periodFilter.months.map(String)}
-                      loading={false}
-                      placeholder="Pilih bulan…"
-                      onChange={(vals) =>
-                        setPeriodFilter((prev) => ({ ...prev, months: vals.map(Number) }))
-                      }
-                    />
-                  </div>
-                  {/* Day range */}
-                  <div className="flex gap-2">
-                    <div className="flex-1">
-                      <p className="mb-1 text-[11px] text-ink-muted">Dari tgl</p>
-                      <Select
-                        value={String(periodFilter.startDay)}
-                        onChange={(e) =>
-                          setPeriodFilter((prev) => ({ ...prev, startDay: Number(e.target.value) }))
-                        }
-                        className="text-xs"
-                      >
-                        {DAY_OPTIONS.map((d) => (
-                          <option key={d} value={String(d)}>
-                            {d}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                    <div className="flex-1">
-                      <p className="mb-1 text-[11px] text-ink-muted">Sampai tgl</p>
-                      <Select
-                        value={periodFilter.endDay === "eom" ? "eom" : String(periodFilter.endDay)}
-                        onChange={(e) => {
-                          const v = e.target.value
-                          setPeriodFilter((prev) => ({
-                            ...prev,
-                            endDay: v === "eom" ? "eom" : Number(v),
-                          }))
-                        }}
-                        className="text-xs"
-                      >
-                        {DAY_OPTIONS.map((d) => (
-                          <option key={d} value={String(d)}>
-                            {d}
-                          </option>
-                        ))}
-                        <option value="eom">Akhir Bulan</option>
-                      </Select>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Catalog loader — visible once period filter has FY + months */}
-              {/* Active Filters */}
-              {filters.length > 0 && (
-                <div>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">
-                    Filter Aktif
-                  </p>
-                  <div className="space-y-3">
-                    {filters.map((fc) => {
-                      // Use DB catalog values if ready; fall back to on-demand fetch
-                      const catalogVals = catalog[fc.field]
-                      const catalogOpts = catalogVals?.map((v) => ({ value: v, label: v }))
-                      const onDemandOpts = filterOptions[fc.field] ?? []
-                      const opts = catalogOpts ?? onDemandOpts
-                      const isLoadingOpts = !catalogOpts && (filterLoading[fc.field] ?? false)
-                      const isBuilding = catalogStatus?.building && !catalogVals
-
-                      return (
-                        <div key={fc.field} className="space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-medium text-ink-body">
-                              {fieldLabel(fc.field)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => removeFilter(fc.field)}
-                              className="rounded p-0.5 text-ink-muted hover:bg-surface hover:text-ink-body"
-                              aria-label={`Hapus filter ${fieldLabel(fc.field)}`}
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </div>
-                          <MultiSelect
-                            options={opts}
-                            selected={fc.values}
-                            loading={isBuilding || isLoadingOpts}
-                            placeholder={
-                              isBuilding
-                                ? "Membangun katalog…"
-                                : catalogOpts
-                                ? "Pilih nilai…"
-                                : "Pilih nilai…"
-                            }
-                            onChange={(vals) => updateFilterValues(fc.field, vals)}
-                            onOpen={catalogOpts ? undefined : () => loadFilterValues(fc.field)}
-                          />
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Field picker */}
-              <div>
-                {/* Catalog status + Refresh button */}
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Fields</p>
-                  <button
-                    type="button"
-                    disabled={catalogStatus?.building ?? false}
-                    onClick={triggerRefreshCatalog}
-                    className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-ink-muted hover:bg-surface hover:text-ink-body disabled:opacity-50"
-                    title="Rebuild katalog nilai dimension dari database"
-                  >
-                    {catalogStatus?.building ? (
-                      <>
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        {catalogStatus.ready}/{catalogStatus.total}
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="h-3 w-3" />
-                        {catalogStatus?.refreshed_at
-                          ? formatRelativeTime(new Date(catalogStatus.refreshed_at))
-                          : "Refresh"}
-                      </>
-                    )}
-                  </button>
-                </div>
-                {/* Progress bar while building */}
-                {catalogStatus?.building && (
-                  <div className="mb-2 h-1 w-full overflow-hidden rounded-full bg-surface">
-                    <div
-                      className="h-full rounded-full bg-accent/60 transition-all duration-300"
-                      style={{ width: `${catalogStatus.pct}%` }}
-                    />
-                  </div>
-                )}
-                <Input
-                  type="search"
-                  placeholder="Cari field…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="mb-2 text-sm"
-                />
-                <div className="space-y-1">
-                  {filteredGroups.map((group) => (
-                    <FieldGroupAccordion
-                      key={group.label}
-                      group={group}
-                      open={search ? true : (openGroups[group.label] ?? true)}
-                      onToggle={() => toggleGroup(group.label)}
-                      rowFields={rowFields}
-                      colFields={colFields}
-                      filterFields={filterFieldsSet}
-                      onAddRow={addToRow}
-                      onAddCol={addToCol}
-                      onAddFilter={addFilter}
-                    />
-                  ))}
-                  {/* Filter-only fields group */}
-                  {filterOnlyVisible.length > 0 && (
-                    <div className="rounded-md border border-hairline">
-                      <button
-                        type="button"
-                        onClick={() => toggleGroup("Filter Only")}
-                        className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-ink-muted hover:bg-surface rounded-md"
-                      >
-                        Filter Only
-                        {openGroups["Filter Only"] ? (
-                          <ChevronDown className="h-3 w-3" />
-                        ) : (
-                          <ChevronRight className="h-3 w-3" />
-                        )}
-                      </button>
-                      {(search || openGroups["Filter Only"]) && (
-                        <div className="border-t border-hairline">
-                          {filterOnlyVisible.map((field) => (
-                            <FieldRow
-                              key={field.key}
-                              field={field}
-                              inRow={false}
-                              inCol={false}
-                              inFilter={filterFieldsSet.has(field.key)}
-                              isFilterOnly
-                              onAddRow={() => {}}
-                              onAddCol={() => {}}
-                              onAddFilter={() => addFilter(field.key)}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
+              {renderZones()}
+              {renderMeasurement(false)}
+              {renderPeriodFilter()}
+              {renderActiveFilters()}
+              {renderFieldPicker(false)}
             </div>
-
-            {/* Generate button */}
             <div className="border-t border-hairline px-4 py-3">
-              <Button
-                className="w-full"
-                disabled={!canGenerate || loading}
-                onClick={handleGenerate}
-              >
+              <Button className="w-full" disabled={!canGenerate || loading} onClick={handleGenerate}>
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -896,29 +966,21 @@ export default function Pivot() {
                   "Generate"
                 )}
               </Button>
-              {!canGenerate && !loading && (
-                <p className="mt-1 text-center text-xs text-ink-muted">
-                  {rowFields.length === 0
-                    ? "Pilih min. 1 baris + ukuran"
-                    : measurement === null
-                    ? "Pilih ukuran"
-                    : periodFilter.fys.length === 0
-                    ? "Pilih min. 1 FY di Period Filter"
-                    : "Pilih min. 1 bulan di Period Filter"}
-                </p>
+              {generateHint && !loading && (
+                <p className="mt-1 text-center text-xs text-ink-muted">{generateHint}</p>
               )}
             </div>
           </aside>
 
-          {/* ── Canvas ───────────────────────────────────────────── */}
+          {/* Canvas */}
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <div className="flex items-center justify-between border-b border-hairline px-6 py-3">
               <p className="text-sm text-ink-muted">
                 {result
                   ? `${result.rows.length} baris`
                   : loading
-                  ? "Menjalankan query…"
-                  : "Belum ada hasil"}
+                    ? "Menjalankan query…"
+                    : "Belum ada hasil"}
               </p>
               {result && !loading && (
                 <Button
@@ -937,23 +999,111 @@ export default function Pivot() {
                 </Button>
               )}
             </div>
-            <div className="flex-1 overflow-auto p-6">
-              {!loading && !error && !colWarning && !result && <BlankState />}
-              {loading && <SkeletonTable />}
-              {colWarning && !loading && (
-                <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
-                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{colWarning}</span>
+            <div className="flex-1 overflow-auto p-6">{renderResultStates(false)}</div>
+          </div>
+        </div>
+
+        {/* ── Mobile layout (below md) — 3 tabs + sticky Generate ── */}
+        <div className="flex h-[calc(100vh-4rem)] flex-col md:hidden">
+          <h1 className="sr-only">Pivot</h1>
+
+          {/* Tab strip */}
+          <div className="flex shrink-0 border-b border-hairline bg-surface" role="tablist">
+            {(
+              [
+                ["config", "Konfigurasi"],
+                ["filter", "Filter"],
+                ["result", "Hasil"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={mobileTab === key}
+                onClick={() => setMobileTab(key)}
+                className={cn(
+                  "flex-1 border-b-2 px-2 py-3 text-sm font-medium transition-colors",
+                  mobileTab === key
+                    ? "border-accent text-ink-display"
+                    : "border-transparent text-ink-muted"
+                )}
+              >
+                {label}
+                {key === "result" && result && (
+                  <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-accent align-middle" />
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab body */}
+          <div className="min-h-0 flex-1">
+            {mobileTab === "config" && (
+              <div className="h-full space-y-5 overflow-y-auto px-4 py-4">
+                {renderZones()}
+                {renderMeasurement(true)}
+                {renderFieldPicker(true)}
+              </div>
+            )}
+            {mobileTab === "filter" && (
+              <div className="h-full space-y-5 overflow-y-auto px-4 py-4">
+                {renderPeriodFilter()}
+                {renderActiveFilters()}
+              </div>
+            )}
+            {mobileTab === "result" && (
+              <div className="flex h-full flex-col">
+                {result && !loading && (
+                  <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline bg-page px-4 py-2">
+                    <p className="text-xs text-ink-muted">{result.rows.length} baris</p>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={downloading}
+                      onClick={handleDownloadExcel}
+                      className="gap-1.5"
+                    >
+                      {downloading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <FileDown className="h-3.5 w-3.5" />
+                      )}
+                      {downloading ? "Mengunduh…" : "Download Excel"}
+                    </Button>
+                  </div>
+                )}
+                {/* Table renders flush (sticky col/header need a clean scroll box);
+                    other states get padding. */}
+                <div className={cn("min-h-0 flex-1 overflow-auto", result && !loading ? "" : "p-4")}>
+                  {renderResultStates(true)}
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* Sticky Generate bar — visible from any tab */}
+          <div className="shrink-0 border-t border-hairline bg-page px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+            {generateHint && !loading && (
+              <p className="mb-1.5 text-center text-xs text-ink-muted">{generateHint}</p>
+            )}
+            <Button
+              className="w-full"
+              disabled={!canGenerate || loading}
+              onClick={() => {
+                handleGenerate()
+                setMobileTab("result")
+              }}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Memproses…
+                </>
+              ) : (
+                "Generate"
               )}
-              {error && (
-                <div className="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{error}</span>
-                </div>
-              )}
-              {result && !loading && <PivotTable result={result} rowFields={rowFields} />}
-            </div>
+            </Button>
           </div>
         </div>
       </AdminShell>
@@ -1110,6 +1260,7 @@ function FieldGroupAccordion({
   rowFields,
   colFields,
   filterFields,
+  mobile = false,
   onAddRow,
   onAddCol,
   onAddFilter,
@@ -1120,6 +1271,7 @@ function FieldGroupAccordion({
   rowFields: string[]
   colFields: string[]
   filterFields: Set<string>
+  mobile?: boolean
   onAddRow: (key: string) => void
   onAddCol: (key: string) => void
   onAddFilter: (key: string) => void
@@ -1143,6 +1295,7 @@ function FieldGroupAccordion({
               inRow={rowFields.includes(field.key)}
               inCol={colFields.includes(field.key)}
               inFilter={filterFields.has(field.key)}
+              mobile={mobile}
               onAddRow={() => onAddRow(field.key)}
               onAddCol={() => onAddCol(field.key)}
               onAddFilter={() => onAddFilter(field.key)}
@@ -1164,6 +1317,7 @@ function FieldRow({
   inCol,
   inFilter,
   isFilterOnly = false,
+  mobile = false,
   onAddRow,
   onAddCol,
   onAddFilter,
@@ -1173,18 +1327,40 @@ function FieldRow({
   inCol: boolean
   inFilter: boolean
   isFilterOnly?: boolean
+  mobile?: boolean
   onAddRow: () => void
   onAddCol: () => void
   onAddFilter: () => void
 }) {
   const isAssigned = (isFilterOnly ? false : inRow || inCol) || inFilter
 
+  // Touch can't hover, so on mobile the R/K/F buttons are always visible and
+  // sized as real tap targets; on desktop they reveal on hover/focus as before.
+  const btnBase = mobile
+    ? "rounded font-medium transition-colors inline-flex items-center justify-center h-9 min-w-9 text-xs"
+    : "rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+
   return (
-    <div className="group flex items-center justify-between px-3 py-1.5 hover:bg-surface">
-      <span className={cn("text-xs", isAssigned ? "text-ink-muted line-through" : "text-ink-body")}>
+    <div
+      className={cn(
+        "group flex items-center justify-between gap-2 px-3 hover:bg-surface",
+        mobile ? "py-2.5" : "py-1.5"
+      )}
+    >
+      <span
+        className={cn(
+          mobile ? "text-sm" : "text-xs",
+          isAssigned ? "text-ink-muted line-through" : "text-ink-body"
+        )}
+      >
         {field.label}
       </span>
-      <div className="flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+      <div
+        className={cn(
+          "flex gap-1",
+          mobile ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+        )}
+      >
         {!isFilterOnly && (
           <>
             <button
@@ -1192,7 +1368,7 @@ function FieldRow({
               onClick={onAddRow}
               disabled={inRow}
               className={cn(
-                "rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
+                btnBase,
                 inRow
                   ? "bg-accent/20 text-accent cursor-default"
                   : "bg-surface-muted text-ink-muted hover:bg-accent/10 hover:text-accent"
@@ -1206,7 +1382,7 @@ function FieldRow({
               onClick={onAddCol}
               disabled={inCol}
               className={cn(
-                "rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
+                btnBase,
                 inCol
                   ? "bg-accent/20 text-accent cursor-default"
                   : "bg-surface-muted text-ink-muted hover:bg-accent/10 hover:text-accent"
@@ -1222,7 +1398,7 @@ function FieldRow({
           onClick={onAddFilter}
           disabled={inFilter}
           className={cn(
-            "rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
+            btnBase,
             inFilter
               ? "bg-accent/20 text-accent cursor-default"
               : "bg-surface-muted text-ink-muted hover:bg-accent/10 hover:text-accent"
@@ -1270,7 +1446,15 @@ function SkeletonTable() {
 // Pivot result table — supports flat, single-level, and multi-level columns
 // ---------------------------------------------------------------------------
 
-function PivotTable({ result, rowFields }: { result: PivotResult; rowFields: string[] }) {
+function PivotTable({
+  result,
+  rowFields,
+  mobile = false,
+}: {
+  result: PivotResult
+  rowFields: string[]
+  mobile?: boolean
+}) {
   const { column_levels, column_combos, rows, col_totals, grand_total } = result
   const isFlat = column_combos.length === 0
   const numColLevels = column_levels.length   // 0 = flat, 1 = single, 2+ = nested
@@ -1281,31 +1465,74 @@ function PivotTable({ result, rowFields }: { result: PivotResult; rowFields: str
   const levelSizes = column_levels.map((l) => l.length)
   const levelSpans = levelSizes.map((_, i) => levelSizes.slice(i + 1).reduce((a, b) => a * b, 1))
 
+  // Mobile-only: which numeric cell is currently showing its full value (inline
+  // tap-toggle). On desktop numbers are always full and cells are not tappable.
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  // Cell text: full grouped number on desktop; compact (Rb/Jt/M/T) on mobile,
+  // expanding to the full value when this exact cell is the tapped one.
+  const cellText = (v: number | null | undefined, key: string): string => {
+    if (v == null) return "—"
+    if (!mobile) return formatNum(v)
+    return expanded === key ? formatNum(v) : formatCompact(v)
+  }
+  // Props that make a numeric cell a tap target on mobile only.
+  const tapProps = (key: string) =>
+    mobile
+      ? {
+          onClick: () => setExpanded((e) => (e === key ? null : key)),
+          role: "button" as const,
+          tabIndex: 0,
+          title: "Tap untuk nilai penuh",
+        }
+      : {}
+
+  // Sticky helpers (mobile only). The single scroll container in the Hasil tab
+  // lets the header row pin on vertical scroll and the first row-dimension
+  // column pin on horizontal scroll. Cells get an explicit opaque bg so rows
+  // scrolling underneath don't bleed through.
+  const headTr = "bg-surface"
+  const headCell = mobile ? "bg-surface" : ""
+  const firstHeadSticky = mobile ? "sticky left-0 z-30 bg-surface" : ""
+  const firstColSticky = mobile ? "sticky left-0 z-10 bg-page" : ""
+  const numCellMobile = mobile ? "cursor-pointer select-none" : ""
+
   return (
-    <div className="overflow-x-auto">
+    <div className={cn(mobile ? "" : "overflow-x-auto")}>
       <table className="border-collapse text-sm">
-        <thead>
+        <thead className={cn(mobile && "sticky top-0 z-20")}>
           {isFlat ? (
             // Flat: single header row
-            <tr className="bg-surface">
+            <tr className={headTr}>
               {rowFieldLabels.map((label, i) => (
                 <th key={i} scope="col"
-                  className="whitespace-nowrap border border-hairline px-3 py-2 text-left text-xs font-semibold text-ink-display">
+                  className={cn(
+                    "whitespace-nowrap border border-hairline px-3 py-2 text-left text-xs font-semibold text-ink-display",
+                    headCell,
+                    i === 0 && firstHeadSticky
+                  )}>
                   {label}
                 </th>
               ))}
               <th scope="col"
-                className="whitespace-nowrap border border-hairline px-3 py-2 text-right text-xs font-semibold text-ink-display">
+                className={cn(
+                  "whitespace-nowrap border border-hairline px-3 py-2 text-right text-xs font-semibold text-ink-display",
+                  headCell
+                )}>
                 Nilai
               </th>
             </tr>
           ) : (
             // Cross-tab: one header row per col level
             column_levels.map((levelValues, levelIdx) => (
-              <tr key={levelIdx} className="bg-surface">
+              <tr key={levelIdx} className={headTr}>
                 {levelIdx === 0 && rowFieldLabels.map((label, i) => (
                   <th key={i} scope="col" rowSpan={headerRowSpan}
-                    className="whitespace-nowrap border border-hairline px-3 py-2 text-left text-xs font-semibold text-ink-display">
+                    className={cn(
+                      "whitespace-nowrap border border-hairline px-3 py-2 text-left text-xs font-semibold text-ink-display",
+                      headCell,
+                      i === 0 && firstHeadSticky
+                    )}>
                     {label}
                   </th>
                 ))}
@@ -1318,7 +1545,10 @@ function PivotTable({ result, rowFields }: { result: PivotResult; rowFields: str
                       key={`${parentIdx}-${vi}`}
                       scope="col"
                       colSpan={levelSpans[levelIdx]}
-                      className="whitespace-nowrap border border-hairline px-3 py-2 text-center text-xs font-semibold text-ink-display"
+                      className={cn(
+                        "whitespace-nowrap border border-hairline px-3 py-2 text-center text-xs font-semibold text-ink-display",
+                        headCell
+                      )}
                     >
                       {v ?? "—"}
                     </th>
@@ -1340,7 +1570,10 @@ function PivotTable({ result, rowFields }: { result: PivotResult; rowFields: str
               {row.dims.map((d, di) =>
                 di === 0 ? (
                   <th key={di} scope="row"
-                    className="whitespace-nowrap border border-hairline px-3 py-1.5 text-left text-xs font-normal text-ink-body">
+                    className={cn(
+                      "whitespace-nowrap border border-hairline px-3 py-1.5 text-left text-xs font-normal text-ink-body",
+                      firstColSticky
+                    )}>
                     {d ?? "—"}
                   </th>
                 ) : (
@@ -1351,19 +1584,33 @@ function PivotTable({ result, rowFields }: { result: PivotResult; rowFields: str
                 )
               )}
               {isFlat ? (
-                <td className="whitespace-nowrap border border-hairline px-3 py-1.5 text-right text-xs tabular-nums text-ink-body">
-                  {formatNum(row.total)}
+                <td
+                  {...tapProps(`t${ri}`)}
+                  className={cn(
+                    "whitespace-nowrap border border-hairline px-3 py-1.5 text-right text-xs tabular-nums text-ink-body",
+                    numCellMobile
+                  )}>
+                  {cellText(row.total, `t${ri}`)}
                 </td>
               ) : (
                 <>
                   {row.values.map((v, vi) => (
                     <td key={vi}
-                      className="whitespace-nowrap border border-hairline px-3 py-1.5 text-right text-xs tabular-nums text-ink-body">
-                      {v != null ? formatNum(v) : "—"}
+                      {...tapProps(`${ri}:${vi}`)}
+                      className={cn(
+                        "whitespace-nowrap border border-hairline px-3 py-1.5 text-right text-xs tabular-nums text-ink-body",
+                        numCellMobile
+                      )}>
+                      {cellText(v, `${ri}:${vi}`)}
                     </td>
                   ))}
-                  <td className="whitespace-nowrap border border-hairline bg-surface/50 px-3 py-1.5 text-right text-xs font-medium tabular-nums text-ink-display">
-                    {formatNum(row.total)}
+                  <td
+                    {...tapProps(`rt${ri}`)}
+                    className={cn(
+                      "whitespace-nowrap border border-hairline bg-surface/50 px-3 py-1.5 text-right text-xs font-medium tabular-nums text-ink-display",
+                      numCellMobile
+                    )}>
+                    {cellText(row.total, `rt${ri}`)}
                   </td>
                 </>
               )}
@@ -1379,19 +1626,33 @@ function PivotTable({ result, rowFields }: { result: PivotResult; rowFields: str
               Total
             </td>
             {isFlat ? (
-              <td className="whitespace-nowrap border border-hairline px-3 py-2 text-right text-xs font-semibold tabular-nums text-ink-display">
-                {formatNum(grand_total)}
+              <td
+                {...tapProps("gt")}
+                className={cn(
+                  "whitespace-nowrap border border-hairline px-3 py-2 text-right text-xs font-semibold tabular-nums text-ink-display",
+                  numCellMobile
+                )}>
+                {cellText(grand_total, "gt")}
               </td>
             ) : (
               <>
                 {col_totals.map((ct, i) => (
                   <td key={i}
-                    className="whitespace-nowrap border border-hairline px-3 py-2 text-right text-xs font-semibold tabular-nums text-ink-display">
-                    {formatNum(ct)}
+                    {...tapProps(`ct${i}`)}
+                    className={cn(
+                      "whitespace-nowrap border border-hairline px-3 py-2 text-right text-xs font-semibold tabular-nums text-ink-display",
+                      numCellMobile
+                    )}>
+                    {cellText(ct, `ct${i}`)}
                   </td>
                 ))}
-                <td className="whitespace-nowrap border border-hairline px-3 py-2 text-right text-xs font-bold tabular-nums text-ink-display">
-                  {formatNum(grand_total)}
+                <td
+                  {...tapProps("gt")}
+                  className={cn(
+                    "whitespace-nowrap border border-hairline px-3 py-2 text-right text-xs font-bold tabular-nums text-ink-display",
+                    numCellMobile
+                  )}>
+                  {cellText(grand_total, "gt")}
                 </td>
               </>
             )}
