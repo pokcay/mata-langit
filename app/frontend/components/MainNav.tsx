@@ -107,6 +107,15 @@ export function MainNav({
     }
   }, [])
 
+  // Close triggered by tapping a nav link / the brand: the page is about to
+  // change via Inertia, which pushes its own history entry. We must NOT call
+  // history.back() here — doing both on the same tap races, and the back()
+  // traversal lands the user on the previous page instead of the one they
+  // tapped. Just hide the drawer and let Inertia handle navigation + history.
+  const closeForNavigation = React.useCallback(() => {
+    setMobileOpen(false)
+  }, [])
+
   // Browser back closes the drawer instead of navigating
   React.useEffect(() => {
     if (typeof window === "undefined") return
@@ -183,7 +192,7 @@ export function MainNav({
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-hairline px-3">
               <Link
                 href={brandHref}
-                onClick={() => closeMobile()}
+                onClick={closeForNavigation}
                 className="flex items-center gap-2 text-ink-display no-underline"
                 aria-label={BRAND}
               >
@@ -205,10 +214,10 @@ export function MainNav({
             </div>
 
             {/* Scrollable nav body — every row ≥ 48 px */}
-            <MobileNavBody items={items} onNavigate={() => closeMobile()} />
+            <MobileNavBody items={items} onNavigate={closeForNavigation} />
 
             {/* Account section */}
-            <MobileAccountBlock onNavigate={() => closeMobile()} />
+            <MobileAccountBlock onNavigate={closeForNavigation} />
           </aside>
         </div>
       )}
