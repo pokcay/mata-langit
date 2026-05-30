@@ -1,0 +1,23 @@
+feb_row1:
+  trans_sl_factory_upload: completed
+  period_year: 2026
+  period_month: 2
+  shipping_point: "SLT"
+  sold_to_party: "0030000041"
+  area: "Sumteng"
+  f_and_r_type: "Faktur"
+  customer_name: "PT ANUGERAH"
+  brand: "Doremi"
+  value_net: "1500.0000"
+
+feb_row2:
+  trans_sl_factory_upload: completed
+  period_year: 2026
+  period_month: 2
+  shipping_point: "JKT2"
+  sold_to_party: "200095"
+  area: "Jabo 2"
+  f_and_r_type: "Faktur"
+  customer_name: "PT IZZI"
+  brand: "Izzi"
+  value_net: "1000.0000"

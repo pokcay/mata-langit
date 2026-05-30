@@ -1,0 +1,38 @@
+pending:
+  user: admin
+  filename: "Detail SL January 2026.xlsx"
+  period_year: 2026
+  period_month: 1
+  status: "pending"
+  row_count: 0
+  replaced_row_count: 0
+
+completed:
+  user: admin
+  filename: "Detail SL February 2026.xlsx"
+  period_year: 2026
+  period_month: 2
+  status: "completed"
+  row_count: 3
+  value_net_sum: "2500.0000"
+  replaced_row_count: 0
+  imported_at: 2026-02-15 10:00:00
+
+failed:
+  user: admin
+  filename: "Detail SL March 2026.xlsx"
+  period_year: 2026
+  period_month: 3
+  status: "failed"
+  row_count: 0
+  replaced_row_count: 0
+  error_message: "Sheet detail tidak ditemukan."
+
+cancelled:
+  user: admin
+  filename: "Detail SL May 2026.xlsx"
+  period_year: 2026
+  period_month: 5
+  status: "cancelled"
+  row_count: 0
+  replaced_row_count: 0
