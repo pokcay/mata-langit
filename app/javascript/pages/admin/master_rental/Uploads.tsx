@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Head, router } from "@inertiajs/react"
+import { uploadFilesSequentially } from "@/lib/uploadFiles"
 import {
   ArrowDown,
   ArrowUp,
@@ -154,6 +155,7 @@ export default function AdminMasterRentalUploads({
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const folderInputRef = React.useRef<HTMLInputElement>(null)
   const activeXhrRef = React.useRef<XMLHttpRequest | null>(null)
+  const importAbortedRef = React.useRef(false)
   const serverAbortRef = React.useRef<AbortController | null>(null)
   const cancelledRef = React.useRef(false)
 
@@ -387,6 +389,7 @@ export default function AdminMasterRentalUploads({
   }
 
   function handleAbortImport() {
+    importAbortedRef.current = true
     activeXhrRef.current?.abort()
     activeXhrRef.current = null
     setImporting(false)
@@ -406,38 +409,41 @@ export default function AdminMasterRentalUploads({
     if (!filesToImport.length) return
     setImporting(true)
     setUploadProgress(0)
+    importAbortedRef.current = false
 
-    const fd = new FormData()
-    filesToImport.forEach((f) => fd.append("files[]", f))
+    // Build initial tracked uploads — period info from preview.
+    const previewMap = new Map(
+      (previews ?? [])
+        .filter((p): p is Exclude<PreviewResult, { error: string }> => !("error" in p))
+        .map((p) => [p.filename, p])
+    )
 
     try {
-      const data = await xhrPost<{ queued: number; upload_ids: number[] }>(
-        "/admin/master-rental/uploads",
-        fd,
-        (pct) => setUploadProgress(pct),
-        activeXhrRef
-      )
+      const { uploaded, errors, aborted } = await uploadFilesSequentially<{ queued: number; upload_ids: number[] }>({
+        url: "/admin/master-rental/uploads",
+        files: filesToImport,
+        abortRef: importAbortedRef,
+        xhrRef: activeXhrRef,
+        onProgress: setUploadProgress,
+      })
+      if (aborted) return
 
-      // Build initial tracked uploads — period info from preview.
-      const previewMap = new Map(
-        (previews ?? [])
-          .filter((p): p is Exclude<PreviewResult, { error: string }> => !("error" in p))
-          .map((p) => [p.filename, p])
-      )
-
-      const initial: TrackedUpload[] = data.upload_ids.map((id, idx) => {
-        const filename = filesToImport[idx]?.name ?? `upload-${id}`
-        const preview = previewMap.get(filename)
-        return {
+      const initial: TrackedUpload[] = uploaded.flatMap(({ file, data }) => {
+        const id = data.upload_ids[0]
+        if (id == null) return []
+        const preview = previewMap.get(file.name)
+        return [{
           id,
-          filename,
+          filename:      file.name,
           period_label:  preview?.period_label ?? "",
           status:        "pending" as UploadStatus,
           row_count:     null,
           error_message: null,
           progress_rows: 0,
-        }
+        }]
       })
+
+      if (errors.length) alert(`Sebagian file gagal diunggah:\n${errors.join("\n")}`)
 
       setPreviews(null)
       setImportFiles([])
@@ -447,8 +453,6 @@ export default function AdminMasterRentalUploads({
       if (fileInputRef.current) fileInputRef.current.value = ""
       if (folderInputRef.current) folderInputRef.current.value = ""
       router.reload({ only: ["uploads"] })
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Import gagal.")
     } finally {
       setImporting(false)
       setUploadProgress(null)
@@ -1302,36 +1306,6 @@ function ProgressBar({ value, indeterminate }: { value?: number; indeterminate?:
 
 function getCsrfToken(): string {
   return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? ""
-}
-
-function xhrPost<T>(
-  url: string,
-  body: FormData,
-  onProgress: (pct: number) => void,
-  xhrRef?: React.MutableRefObject<XMLHttpRequest | null>
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    if (xhrRef) xhrRef.current = xhr
-    xhr.open("POST", url)
-    xhr.setRequestHeader("X-CSRF-Token", getCsrfToken())
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
-    }
-    xhr.onload = () => {
-      if (xhrRef) xhrRef.current = null
-      try {
-        const data = JSON.parse(xhr.responseText)
-        if (xhr.status >= 200 && xhr.status < 300) resolve(data as T)
-        else reject(new Error(data?.error ?? `HTTP ${xhr.status}`))
-      } catch {
-        reject(new Error("Response parse error"))
-      }
-    }
-    xhr.onerror = () => reject(new Error("Network error saat upload."))
-    xhr.onabort = () => reject(new Error("Upload dibatalkan."))
-    xhr.send(body)
-  })
 }
 
 function formatDate(iso: string): string {

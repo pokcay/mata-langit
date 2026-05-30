@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Head, router } from "@inertiajs/react"
+import { uploadFilesSequentially } from "@/lib/uploadFiles"
 import {
   Ban,
   CheckCircle2,
@@ -112,36 +113,6 @@ function getCsrfToken(): string {
   return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? ""
 }
 
-function xhrPost<T>(
-  url: string,
-  body: FormData,
-  onProgress: (pct: number) => void,
-  xhrRef: React.MutableRefObject<XMLHttpRequest | null>
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhrRef.current = xhr
-    xhr.open("POST", url)
-    xhr.setRequestHeader("X-CSRF-Token", getCsrfToken())
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
-    }
-    xhr.onload = () => {
-      xhrRef.current = null
-      try {
-        const data = JSON.parse(xhr.responseText)
-        if (xhr.status >= 200 && xhr.status < 300) resolve(data as T)
-        else reject(new Error(data?.error ?? `HTTP ${xhr.status}`))
-      } catch {
-        reject(new Error("Response parse error"))
-      }
-    }
-    xhr.onerror = () => reject(new Error("Network error"))
-    xhr.onabort = () => reject(new Error("Aborted"))
-    xhr.send(body)
-  })
-}
-
 const SORT_OPTIONS: SortOption[] = [
   { sort: "created_at", direction: "desc", label: "Tanggal terbaru" },
   { sort: "created_at", direction: "asc", label: "Tanggal terlama" },
@@ -179,6 +150,7 @@ export default function AdminKaProfitabilityUploads({
   const fileInputRef   = React.useRef<HTMLInputElement>(null)
   const folderInputRef = React.useRef<HTMLInputElement>(null)
   const activeXhrRef   = React.useRef<XMLHttpRequest | null>(null)
+  const importAbortedRef = React.useRef(false)
   const cancelledRef   = React.useRef(false)
 
   const [parseResults, setParseResults]     = React.useState<KaProfitabilityPreviewResult[] | null>(null)
@@ -449,38 +421,41 @@ export default function AdminKaProfitabilityUploads({
     if (!filesToImport.length) return
     setImporting(true)
     setUploadProgress(0)
+    importAbortedRef.current = false
 
-    const fd = new FormData()
-    filesToImport.forEach((f) => fd.append("files[]", f))
+    // Build initial tracked uploads — fiscal_year from preview
+    const previewMap = new Map(
+      (serverPreviews ?? [])
+        .filter((p): p is Exclude<ServerPreviewResult, { error: string }> => !("error" in p))
+        .map((p) => [p.filename, p])
+    )
 
     try {
-      const data = await xhrPost<{ queued: number; upload_ids: number[] }>(
-        "/admin/data/ka-profitability/uploads",
-        fd,
-        (pct) => setUploadProgress(pct),
-        activeXhrRef
-      )
+      const { uploaded, errors, aborted } = await uploadFilesSequentially<{ queued: number; upload_ids: number[] }>({
+        url: "/admin/data/ka-profitability/uploads",
+        files: filesToImport,
+        abortRef: importAbortedRef,
+        xhrRef: activeXhrRef,
+        onProgress: setUploadProgress,
+      })
+      if (aborted) return
 
-      // Build initial tracked uploads — fiscal_year from preview
-      const previewMap = new Map(
-        (serverPreviews ?? [])
-          .filter((p): p is Exclude<ServerPreviewResult, { error: string }> => !("error" in p))
-          .map((p) => [p.filename, p])
-      )
-
-      const initial: TrackedUpload[] = data.upload_ids.map((id, idx) => {
-        const filename   = filesToImport[idx]?.name ?? `upload-${id}`
-        const preview    = previewMap.get(filename)
-        return {
+      const initial: TrackedUpload[] = uploaded.flatMap(({ file, data }) => {
+        const id = data.upload_ids[0]
+        if (id == null) return []
+        const preview = previewMap.get(file.name)
+        return [{
           id,
-          filename,
+          filename:      file.name,
           fiscal_year:   preview?.fiscal_year ?? "",
           status:        "pending" as UploadStatus,
           record_count:  null,
           error_message: null,
           progress_rows: 0,
-        }
+        }]
       })
+
+      if (errors.length) alert(`Sebagian file gagal diunggah:\n${errors.join("\n")}`)
 
       setServerPreviews(null)
       setParseResults(null)
@@ -489,8 +464,6 @@ export default function AdminKaProfitabilityUploads({
       setUploadProgress(null)
       setTrackedUploads(initial)
       router.reload({ only: ["uploads"] })
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Import gagal.")
     } finally {
       setImporting(false)
       setUploadProgress(null)
@@ -498,6 +471,7 @@ export default function AdminKaProfitabilityUploads({
   }
 
   function handleAbortImport() {
+    importAbortedRef.current = true
     activeXhrRef.current?.abort()
     setImporting(false)
     setUploadProgress(null)

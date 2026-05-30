@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Head, router } from "@inertiajs/react"
+import { uploadFilesSequentially } from "@/lib/uploadFiles"
 import {
   ArrowDown,
   ArrowUp,
@@ -167,6 +168,7 @@ export default function AdminMarketShareB2bUploads({
   const fileInputRef   = React.useRef<HTMLInputElement>(null)
   const folderInputRef = React.useRef<HTMLInputElement>(null)
   const activeXhrRef   = React.useRef<XMLHttpRequest | null>(null)
+  const importAbortedRef = React.useRef(false)
   const cancelledRef   = React.useRef(false)
 
   const [parseResults, setParseResults]     = React.useState<MarketShareB2bResult[] | null>(null)
@@ -441,36 +443,37 @@ export default function AdminMarketShareB2bUploads({
     if (!filesToImport.length) return
     setImporting(true)
     setUploadProgress(0)
+    importAbortedRef.current = false
 
-    const fd = new FormData()
-    filesToImport.forEach((f) => fd.append("files[]", f))
+    const previewMap = new Map(
+      (serverPreviews ?? [])
+        .filter((p): p is Exclude<PreviewServerResult, { error: string }> => !("error" in p))
+        .map((p) => [p.filename, p])
+    )
 
     try {
-      const data = await xhrPost<{ queued: number; upload_ids: number[] }>(
-        "/admin/market-share-b2b/uploads",
-        fd,
-        (pct) => setUploadProgress(pct),
-        activeXhrRef
-      )
+      const { uploaded, errors, aborted } = await uploadFilesSequentially<{ queued: number; upload_ids: number[] }>({
+        url: "/admin/market-share-b2b/uploads",
+        files: filesToImport,
+        abortRef: importAbortedRef,
+        xhrRef: activeXhrRef,
+        onProgress: setUploadProgress,
+      })
+      if (aborted) return
 
-      const previewMap = new Map(
-        (serverPreviews ?? [])
-          .filter((p): p is Exclude<PreviewServerResult, { error: string }> => !("error" in p))
-          .map((p) => [p.filename, p])
-      )
-
-      const initial: TrackedUpload[] = data.upload_ids.map((id, idx) => {
-        const filename = filesToImport[idx]?.name ?? `upload-${id}`
-        const preview  = previewMap.get(filename)
+      const initial: TrackedUpload[] = uploaded.flatMap(({ file, data }) => {
+        const id = data.upload_ids[0]
+        if (id == null) return []
+        const preview = previewMap.get(file.name)
         const periodLabel = preview
           ? buildPeriodLabel(
               preview.period_year_from, preview.period_month_from,
               preview.period_year_to,   preview.period_month_to
             )
           : ""
-        return {
+        return [{
           id,
-          filename,
+          filename:      file.name,
           account_code:  preview?.account_code  ?? "",
           account_name:  preview?.account_name  ?? "",
           report_type:   preview?.report_type   ?? "",
@@ -479,8 +482,10 @@ export default function AdminMarketShareB2bUploads({
           row_count:     null,
           error_message: null,
           progress_rows: 0,
-        }
+        }]
       })
+
+      if (errors.length) alert(`Sebagian file gagal diunggah:\n${errors.join("\n")}`)
 
       setParseResults(null)
       setServerPreviews(null)
@@ -489,8 +494,6 @@ export default function AdminMarketShareB2bUploads({
       setUploadProgress(null)
       setTrackedUploads(initial)
       router.reload({ only: ["uploads"] })
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Import gagal.")
     } finally {
       setImporting(false)
       setUploadProgress(null)
@@ -652,7 +655,7 @@ export default function AdminMarketShareB2bUploads({
                     {uploadProgress < 100 ? `Mengirim file… ${uploadProgress}%` : "File terkirim, menunggu antrian…"}
                   </p>
                   {uploadProgress < 100 && (
-                    <Button variant="ghost" size="sm" onClick={() => activeXhrRef.current?.abort()}>
+                    <Button variant="ghost" size="sm" onClick={() => { importAbortedRef.current = true; activeXhrRef.current?.abort() }}>
                       <Ban className="mr-1 h-3 w-3" />
                       Batal
                     </Button>
@@ -1336,36 +1339,6 @@ function buildPeriodLabel(yf: number, mf: number, yt: number, mt: number): strin
 
 function getCsrfToken(): string {
   return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? ""
-}
-
-function xhrPost<T>(
-  url: string,
-  body: FormData,
-  onProgress: (pct: number) => void,
-  xhrRef?: React.MutableRefObject<XMLHttpRequest | null>
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    if (xhrRef) xhrRef.current = xhr
-    xhr.open("POST", url)
-    xhr.setRequestHeader("X-CSRF-Token", getCsrfToken())
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
-    }
-    xhr.onload = () => {
-      if (xhrRef) xhrRef.current = null
-      try {
-        const data = JSON.parse(xhr.responseText)
-        if (xhr.status >= 200 && xhr.status < 300) resolve(data as T)
-        else reject(new Error(data?.error ?? `HTTP ${xhr.status}`))
-      } catch {
-        reject(new Error("Response parse error"))
-      }
-    }
-    xhr.onerror = () => reject(new Error("Network error saat upload."))
-    xhr.onabort = () => reject(new Error("Upload dibatalkan."))
-    xhr.send(body)
-  })
 }
 
 function formatDate(iso: string): string {

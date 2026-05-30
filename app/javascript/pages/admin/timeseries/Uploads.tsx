@@ -1,6 +1,7 @@
 import * as React from "react"
 import { Head, router } from "@inertiajs/react"
 import { parseXlsxForPreview } from "@/lib/xlsxPreviewParser"
+import { uploadFilesSequentially } from "@/lib/uploadFiles"
 import {
   ArrowDown,
   ArrowLeft,
@@ -439,41 +440,15 @@ export default function AdminTimeseriesUploads({
     setUploadProgress(0)
     importAbortedRef.current = false
 
-    // Upload one file per request rather than bundling all of them into a single
-    // POST. A combined upload of the large region exports (RegCen alone is ~60 MB)
-    // exceeds the reverse-proxy / Cloudflare request-body limit and stalls. Each
-    // file sent on its own stays under that cap. Progress is reported as an
-    // aggregate across all files, weighted by byte size.
-    const totalBytes = filesToImport.reduce((sum, f) => sum + f.size, 0)
-    let sentBytes = 0
-    const errors: string[] = []
-
     try {
-      for (const file of filesToImport) {
-        if (importAbortedRef.current) break
-        const fd = new FormData()
-        fd.append("files[]", file)
-        try {
-          await xhrPost<{ queued: number; upload_ids: number[] }>(
-            "/admin/timeseries/uploads",
-            fd,
-            (_pct, loaded) => {
-              const pct = totalBytes > 0
-                ? Math.round(((sentBytes + loaded) / totalBytes) * 100)
-                : 100
-              setUploadProgress(Math.min(pct, 100))
-            },
-            activeXhrRef
-          )
-        } catch (err) {
-          if (importAbortedRef.current) break
-          errors.push(`${file.name}: ${err instanceof Error ? err.message : "gagal diunggah"}`)
-        }
-        sentBytes += file.size
-        setUploadProgress(totalBytes > 0 ? Math.round((sentBytes / totalBytes) * 100) : 100)
-      }
-
-      if (importAbortedRef.current) return
+      const { errors, aborted } = await uploadFilesSequentially<{ queued: number; upload_ids: number[] }>({
+        url: "/admin/timeseries/uploads",
+        files: filesToImport,
+        abortRef: importAbortedRef,
+        xhrRef: activeXhrRef,
+        onProgress: setUploadProgress,
+      })
+      if (aborted) return
 
       if (errors.length) {
         alert(`Sebagian file gagal diunggah:\n${errors.join("\n")}`)
@@ -1450,39 +1425,6 @@ function ProgressBar({ value, indeterminate }: { value?: number; indeterminate?:
 
 function getCsrfToken(): string {
   return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? ""
-}
-
-function xhrPost<T>(
-  url: string,
-  body: FormData,
-  onProgress: (pct: number, loaded: number) => void,
-  xhrRef?: React.MutableRefObject<XMLHttpRequest | null>
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    if (xhrRef) xhrRef.current = xhr
-    xhr.open("POST", url)
-    xhr.setRequestHeader("X-CSRF-Token", getCsrfToken())
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100), e.loaded)
-    }
-    xhr.onload = () => {
-      if (xhrRef) xhrRef.current = null
-      try {
-        const data = JSON.parse(xhr.responseText)
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(data as T)
-        } else {
-          reject(new Error(data?.error ?? `HTTP ${xhr.status}`))
-        }
-      } catch {
-        reject(new Error("Response parse error"))
-      }
-    }
-    xhr.onerror = () => reject(new Error("Network error saat upload."))
-    xhr.onabort = () => reject(new Error("Upload dibatalkan."))
-    xhr.send(body)
-  })
 }
 
 function formatNumber(n: number): string {
