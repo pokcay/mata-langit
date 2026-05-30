@@ -1,16 +1,30 @@
 import { unzipSync } from "fflate"
 
 /**
- * Minimal XLSX preview parser.
+ * Minimal, memory-safe XLSX preview parser.
  *
  * Resolves worksheet order from workbook metadata, builds a shared-strings
  * table, identifies the Netto Wise column letter from the header row, and
  * sums that column across all data rows.
  *
+ * IMPORTANT — why this streams instead of decoding the whole sheet:
+ * source-system files exported by LibreOffice Calc write every string inline
+ * (no xl/sharedStrings.xml), which bloats a single month's worksheet to
+ * ~700-800 MB uncompressed. Decoding that into one JavaScript string exceeds
+ * V8's max string length (~512 MB) and the parse silently yields 0/0. So the
+ * worksheet bytes are decoded in fixed-size windows and consumed one <row> at a
+ * time — the working buffer never holds more than a single chunk, so the string
+ * limit is never approached regardless of sheet size.
+ *
  * If the first worksheet has no data rows (e.g. blank cover sheet or wrong
  * sheet resolved from metadata), the parser scans all xl/worksheets/*.xml
  * entries and returns the result from the sheet with the most data rows.
  */
+
+// Bytes decoded per pass. Peak working-set is roughly one chunk plus the tail of
+// the row straddling the boundary — kept far below the V8 string-size ceiling.
+const CHUNK_SIZE = 8 * 1024 * 1024
+
 export async function parseXlsxForPreview(
   file: File
 ): Promise<{ rowCount: number; nettoSum: number }> {
@@ -31,6 +45,8 @@ export async function parseXlsxForPreview(
   })
 
   // ── 3. Build shared-strings table (joining <r><t>…</t></r> runs) ───────────
+  //    Inline-string files (LibreOffice Calc) ship no sharedStrings.xml, so this
+  //    is typically empty; when present it is small enough to decode whole.
   const sharedStrings: string[] = []
   const ssBytes = extracted["xl/sharedStrings.xml"]
   if (ssBytes) {
@@ -64,7 +80,7 @@ export async function parseXlsxForPreview(
     const wsBytes = extracted[path]
     if (!wsBytes) continue
     anyReadable = true
-    const { rowCount, nettoSum } = parseWorksheetXml(decode(wsBytes), sharedStrings)
+    const { rowCount, nettoSum } = parseWorksheetBytes(wsBytes, sharedStrings)
     if (rowCount > bestRowCount) {
       bestRowCount = rowCount
       bestNettoSum = nettoSum
@@ -78,44 +94,50 @@ export async function parseXlsxForPreview(
   return { rowCount: bestRowCount, nettoSum: Math.round(bestNettoSum * 10000) / 10000 }
 }
 
-// ── Worksheet XML parser ───────────────────────────────────────────────────────
+// ── Streaming worksheet parser ─────────────────────────────────────────────────
 
-function parseWorksheetXml(
-  wsXml: string,
+/**
+ * Decodes the worksheet bytes in CHUNK_SIZE windows and processes one <row>…
+ * </row> element at a time. The first row is treated as the header (used to
+ * locate the "Netto Wise" column); subsequent non-blank rows are counted and
+ * their Netto Wise cell summed. Never materialises the full worksheet string.
+ */
+function parseWorksheetBytes(
+  wsBytes: Uint8Array,
   sharedStrings: string[],
 ): { rowCount: number; nettoSum: number } {
-  const rowParts = wsXml.split("<row ")
-
-  // ── Locate Netto Wise column letter from header row ───────────────────────
+  const decoder = new TextDecoder()
+  let buffer = ""
+  let rowIndex = 0
   let nettoCol = ""
-  if (rowParts.length > 1) {
-    const headerEnd = rowParts[1].indexOf("</row>")
-    const headerXml = rowParts[1].slice(0, headerEnd >= 0 ? headerEnd : undefined)
-    for (const cellXml of headerXml.split("<c ").slice(1)) {
-      const letterMatch = cellXml.match(/r="([A-Z]+)\d+"/)
-      if (!letterMatch) continue
-      const colName = xlsxCellString(cellXml, sharedStrings)
-      if (colName && colName.trim() === "Netto Wise") {
-        nettoCol = letterMatch[1]
-        break
-      }
-    }
-  }
-
-  // ── Count rows and sum netto column ──────────────────────────────────────
   let rowCount = 0
   let nettoSum = 0
 
-  for (let i = 2; i < rowParts.length; i++) {
-    const end = rowParts[i].indexOf("</row>")
-    const rowContent = end >= 0 ? rowParts[i].slice(0, end) : rowParts[i]
+  // `rowXml` is the slice between "<row " and the matching "</row>", mirroring
+  // the semantics of splitting on "<row " (the leading `r="N" …>` is dropped by
+  // the first split on "<c ").
+  const processRow = (rowXml: string) => {
+    rowIndex++
 
-    if (!rowContent.includes("<v>") && !rowContent.includes("<is>")) continue // blank row
+    if (rowIndex === 1) {
+      // Header row → locate the Netto Wise column letter.
+      for (const cellXml of rowXml.split("<c ").slice(1)) {
+        const letterMatch = cellXml.match(/r="([A-Z]+)\d+"/)
+        if (!letterMatch) continue
+        const colName = xlsxCellString(cellXml, sharedStrings)
+        if (colName && colName.trim() === "Netto Wise") {
+          nettoCol = letterMatch[1]
+          break
+        }
+      }
+      return
+    }
+
+    if (!rowXml.includes("<v>") && !rowXml.includes("<is>")) return // blank row
     rowCount++
 
-    if (!nettoCol) continue
-
-    for (const cellXml of rowContent.split("<c ").slice(1)) {
+    if (!nettoCol) return
+    for (const cellXml of rowXml.split("<c ").slice(1)) {
       const letterMatch = cellXml.match(/r="([A-Z]+)\d+"/)
       if (!letterMatch || letterMatch[1] !== nettoCol) continue
       const raw = xlsxCellValue(cellXml, sharedStrings)
@@ -125,6 +147,25 @@ function parseWorksheetXml(
       break
     }
   }
+
+  // Consume every complete row currently sitting in `buffer`, leaving only the
+  // trailing partial row (or pre-first-row preamble) behind.
+  const flushRows = () => {
+    let end: number
+    while ((end = buffer.indexOf("</row>")) !== -1) {
+      const start = buffer.lastIndexOf("<row ", end)
+      if (start !== -1) processRow(buffer.slice(start + 5, end))
+      buffer = buffer.slice(end + 6) // 6 === "</row>".length
+    }
+  }
+
+  for (let off = 0; off < wsBytes.length; off += CHUNK_SIZE) {
+    const isLast = off + CHUNK_SIZE >= wsBytes.length
+    const slice = wsBytes.subarray(off, isLast ? wsBytes.length : off + CHUNK_SIZE)
+    buffer += decoder.decode(slice, { stream: !isLast })
+    flushRows()
+  }
+  flushRows()
 
   return { rowCount, nettoSum }
 }
