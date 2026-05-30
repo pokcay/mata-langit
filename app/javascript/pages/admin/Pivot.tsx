@@ -1062,14 +1062,15 @@ export default function Pivot() {
                       size="sm"
                       disabled={downloading}
                       onClick={handleDownloadExcel}
-                      className="gap-1.5"
+                      aria-label={downloading ? "Mengunduh…" : "Download Excel"}
+                      title={downloading ? "Mengunduh…" : "Download Excel"}
+                      className="px-2"
                     >
                       {downloading ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
-                        <FileDown className="h-3.5 w-3.5" />
+                        <FileDown className="h-4 w-4" />
                       )}
-                      {downloading ? "Mengunduh…" : "Download Excel"}
                     </Button>
                   </div>
                 )}

@@ -1,0 +1,41 @@
+pending:
+  user: admin
+  filename: "Rental Cost 2026 - JAN.xlsx"
+  period_year: 2026
+  period_month: 1
+  status: "pending"
+  row_count: 0
+  total_cost: 0
+  replaced_row_count: 0
+
+completed:
+  user: admin
+  filename: "Rental Cost 2026 - FEB.xlsx"
+  period_year: 2026
+  period_month: 2
+  status: "completed"
+  row_count: 2
+  total_cost: 6500000
+  replaced_row_count: 0
+  imported_at: 2026-02-15 10:00:00
+
+failed:
+  user: admin
+  filename: "Rental Cost 2026 - MAR.xlsx"
+  period_year: 2026
+  period_month: 3
+  status: "failed"
+  row_count: 0
+  total_cost: 0
+  replaced_row_count: 0
+  error_message: "Sheet 'RENTAL' tidak ditemukan."
+
+cancelled:
+  user: admin
+  filename: "Rental Cost 2026 - MAY.xlsx"
+  period_year: 2026
+  period_month: 5
+  status: "cancelled"
+  row_count: 0
+  total_cost: 0
+  replaced_row_count: 0

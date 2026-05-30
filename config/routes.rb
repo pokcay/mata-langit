@@ -62,6 +62,20 @@ Rails.application.routes.draw do
       end
     end
 
+    namespace :trans_sl_factory, path: "trans-sl-factory" do
+      resources :uploads, only: %i[ index create ] do
+        collection { post :preview }
+        member { patch :cancel }
+      end
+    end
+
+    namespace :master_rental, path: "master-rental" do
+      resources :uploads, only: %i[ index create ] do
+        collection { post :preview }
+        member { patch :cancel }
+      end
+    end
+
     namespace :market_share_b2b, path: "market-share-b2b" do
       resources :uploads, only: %i[ index create destroy ] do
         collection { post :preview }

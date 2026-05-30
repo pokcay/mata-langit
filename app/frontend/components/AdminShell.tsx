@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Database, Grid3x3, Home, Inbox, LayoutDashboard, Mail, Package, Palette, PieChart, ShieldCheck, ShoppingCart, Store, Table2, TrendingUp, Users } from "lucide-react"
+import { Banknote, Database, Gauge, Grid3x3, Home, Inbox, LayoutDashboard, Mail, Package, Palette, PieChart, ShieldCheck, ShoppingCart, Store, Table2, TrendingUp, Users } from "lucide-react"
 import { usePage } from "@inertiajs/react"
 import { MainNav, type NavEntry } from "@/components/MainNav"
 import type { PageProps } from "@/types/inertia"
@@ -46,6 +46,8 @@ export function AdminShell({ children, full }: { children: React.ReactNode; full
         url.startsWith("/admin/master-outlet-dist") ||
         url.startsWith("/admin/master-product-dist") ||
         url.startsWith("/admin/trans-sellout-account") ||
+        url.startsWith("/admin/trans-sl-factory") ||
+        url.startsWith("/admin/master-rental") ||
         url.startsWith("/admin/market-share-b2b") ||
         url.startsWith("/admin/data") ||
         url.startsWith("/admin/pivot"),
@@ -73,6 +75,18 @@ export function AdminShell({ children, full }: { children: React.ReactNode; full
           icon: ShoppingCart,
           label: "Trans Sellout Account",
           match: (url) => url.startsWith("/admin/trans-sellout-account"),
+        },
+        {
+          href: "/admin/trans-sl-factory/uploads",
+          icon: Gauge,
+          label: "Trans SL Factory",
+          match: (url) => url.startsWith("/admin/trans-sl-factory"),
+        },
+        {
+          href: "/admin/master-rental/uploads",
+          icon: Banknote,
+          label: "Master Rental",
+          match: (url) => url.startsWith("/admin/master-rental"),
         },
         {
           href: "/admin/market-share-b2b/uploads",

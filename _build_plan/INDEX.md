@@ -1,6 +1,6 @@
 # Build Plan Index
 
-Last updated: 2026-05-27
+Last updated: 2026-05-30
 
 ## Features
 
@@ -16,6 +16,8 @@ Last updated: 2026-05-27
 | 8 | Market Share B2B | ✅ Complete | [prd.md](08-market-share-b2b/prd.md) | 2026-05-26 |
 | 9 | KA Profitability | ✅ Complete | [prd.md](09-ka-profitability/prd.md) | 2026-05-26 |
 | 10 | Mobile Responsiveness Overhaul | ✅ Complete | [prd.md](10-mobile-responsiveness/prd.md) | 2026-05-27 |
+| 11 | Trans SL Factory | ✅ Complete | [prd.md](11-trans-sl-factory/prd.md) | 2026-05-29 |
+| 12 | Master Rental | ✅ Complete | [prd.md](12-master-rental/prd.md) | 2026-05-30 |
 
 ## Changelog
 
@@ -58,3 +60,11 @@ Last updated: 2026-05-27
 - **2026-05-27** — Feature 10 (Mobile Responsiveness Overhaul), Milestone 1 complete: full-screen mobile drawer with expanded Data group + account block + theme toggle + sign-out; new `<BottomSheet>` + `<MobileStickyActionBar>` primitives; every `<Dialog>` now becomes a bottom sheet below `md` via CSS; sticky-submit + 16px-input + 44px-touch-target audit on Settings / Profile / Password / Email Template / Inbox; design system gains a Bottom Sheet section and mobile previews for Modal / Page Headers / Forms
 - **2026-05-27** — Feature 10 (Mobile Responsiveness Overhaul), Milestone 2 complete: responsive table → card-list pattern + Filter/Sort bottom sheets applied to all 8 data screens (6 Uploads + Integrity history + Integrity detail); new `<DataCard>` / `<MobileFilterSortBar>` / `<MobileFilterSheet>` / `<MobileSortSheet>` primitives + design-system "Mobile data list" section; URL query state preserved as the canonical source so desktop ↔ mobile is symmetric
 - **2026-05-29** — Feature 10 (Mobile Responsiveness Overhaul), Milestone 3 complete: `/admin/pivot` mobile three-tab layout (Konfigurasi / Filter / Hasil) with a sticky Generate button, sticky first-column + sticky header result table, compact Rb/Jt/M/T numbers that expand on tap, and a pinned Download Excel toolbar — all via shared render-helper closures over the existing Pivot state machine; desktop two-panel layout unchanged at `md`+ (backend/URL/SQL/export contracts untouched). Feature 10 complete.
+- **2026-05-29** — Feature 11 (Trans SL Factory) PRD created
+- **2026-05-30** — Feature 11 (Trans SL Factory), Milestone 2 complete: TransSlFactoryUploadChannel + per-upload broadcasts in the import job (status + rolling row count) + live progress view with per-file Batalkan button and "X berhasil, Y dibatalkan, Z gagal" summary + live-updating in-flight history rows; PATCH /cancel with full transaction rollback (preserves prior-period data on a cancelled replacement); proven by a non-transactional separate-connection cancel test + a transactional atomicity test
+- **2026-05-30** — Feature 11 (Trans SL Factory), Milestone 3 complete: server-side pagination (25/page) + Year/Month/Status filters + filename search + 5-column sort (incl. composite period) + URL-reflected state + mobile filter/sort bottom sheets on the upload history table. Feature 11 complete.
+- **2026-05-29** — Feature 11 (Trans SL Factory), Milestone 1 complete: upload pipeline for "Detail SL {Month} {Year}".xlsx — parser locates the detail sheet by "Detail SL" prefix (excludes the (2) brand-code variant), reads period from the in-file PERIOD row, column-type-aware casting (DD.MM.YYYY dates, leading-zero string IDs, 24 line-level columns), duplicate detection by period with old-vs-new row count + total Value Net comparison, per-file checkboxes, background import job with advisory lock, plain history table with IDR Value Net formatting; verified end-to-end against the real 34k-row file (33,708 rows)
+- **2026-05-30** — Feature 12 (Master Rental) PRD created
+- **2026-05-30** — Feature 12 (Master Rental), Milestone 1 complete: upload pipeline for "Rental Cost {Year} - {Month}".xlsx — parser reads the RENTAL sheet, period from the merged A1 title cell ({MONTH NAME} - {YYYY}), maps 8 columns (cost → bigint), duplicate detection by period with old-vs-new row count + total COST comparison, per-file checkboxes, background import job with advisory lock, plain history table; verified end-to-end against the real file (2,647 rows, total COST 2,630,748,684)
+- **2026-05-30** — Feature 12 (Master Rental), Milestone 2 complete: MasterRentalUploadChannel + per-upload broadcasts in the import job (status + rolling row count) + live progress view with per-file Batalkan button and "X berhasil, Y dibatalkan, Z gagal" summary + live-updating in-flight history rows; PATCH /cancel with full transaction rollback (preserves prior-period data on a cancelled replacement); proven by a non-transactional separate-connection cancel test + channel + controller cancel tests
+- **2026-05-30** — Feature 12 (Master Rental), Milestone 3 complete: server-side pagination (25/page) + Year/Month/Status filters + filename search + 5-column sort (incl. composite period) + URL-reflected state + mobile filter/sort bottom sheets on the upload history table. Feature 12 complete.

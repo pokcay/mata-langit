@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_05_28_023000) do
+ActiveRecord::Schema[8.0].define(version: 2026_05_30_000002) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -403,6 +403,40 @@ ActiveRecord::Schema[8.0].define(version: 2026_05_28_023000) do
     t.index ["distributor_sap_code"], name: "index_master_product_dist_uploads_on_distributor_sap_code"
     t.index ["status"], name: "index_master_product_dist_uploads_on_status"
     t.index ["user_id"], name: "index_master_product_dist_uploads_on_user_id"
+  end
+
+  create_table "master_rental_costs", force: :cascade do |t|
+    t.bigint "master_rental_upload_id", null: false
+    t.integer "period_year", null: false
+    t.integer "period_month", null: false
+    t.string "region"
+    t.string "area"
+    t.string "dist_parent"
+    t.string "dist_child"
+    t.string "outlet_code"
+    t.string "outlet_name"
+    t.string "rental"
+    t.bigint "cost"
+    t.index ["master_rental_upload_id"], name: "index_mrc_on_upload_id"
+    t.index ["period_year", "period_month"], name: "index_mrc_on_period"
+  end
+
+  create_table "master_rental_uploads", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "filename", null: false
+    t.integer "period_year", null: false
+    t.integer "period_month", null: false
+    t.string "status", default: "pending", null: false
+    t.integer "row_count", default: 0, null: false
+    t.bigint "total_cost", default: 0, null: false
+    t.integer "replaced_row_count", default: 0, null: false
+    t.text "error_message"
+    t.datetime "imported_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["period_year", "period_month"], name: "index_mru_on_period"
+    t.index ["status"], name: "index_master_rental_uploads_on_status"
+    t.index ["user_id"], name: "index_master_rental_uploads_on_user_id"
   end
 
   create_table "pivot_dimension_caches", force: :cascade do |t|
@@ -815,6 +849,56 @@ ActiveRecord::Schema[8.0].define(version: 2026_05_28_023000) do
     t.index ["user_id"], name: "index_trans_sellout_account_uploads_on_user_id"
   end
 
+  create_table "trans_sl_factory_transactions", force: :cascade do |t|
+    t.bigint "trans_sl_factory_upload_id", null: false
+    t.integer "period_year", null: false
+    t.integer "period_month", null: false
+    t.string "shipping_point"
+    t.string "sold_to_party"
+    t.string "area"
+    t.string "f_and_r_type"
+    t.string "customer_name"
+    t.date "date_so"
+    t.string "no_so"
+    t.string "no_dn"
+    t.date "date_invoice"
+    t.string "no_invoice"
+    t.string "code_material"
+    t.string "brand"
+    t.string "description_material"
+    t.decimal "qty_so", precision: 20, scale: 4
+    t.decimal "value_so", precision: 20, scale: 4
+    t.decimal "qty_delivery_order", precision: 20, scale: 4
+    t.decimal "value_delivery_order", precision: 20, scale: 4
+    t.decimal "qty_return", precision: 20, scale: 4
+    t.decimal "value_return", precision: 20, scale: 4
+    t.decimal "qty_net", precision: 20, scale: 4
+    t.decimal "value_net", precision: 20, scale: 4
+    t.decimal "pct_qty", precision: 20, scale: 4
+    t.decimal "pct_value", precision: 20, scale: 4
+    t.text "reason_for_rejection"
+    t.index ["period_year", "period_month"], name: "index_tslft_on_period"
+    t.index ["trans_sl_factory_upload_id"], name: "index_tslft_on_upload_id"
+  end
+
+  create_table "trans_sl_factory_uploads", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "filename", null: false
+    t.integer "period_year", null: false
+    t.integer "period_month", null: false
+    t.string "status", default: "pending", null: false
+    t.integer "row_count", default: 0, null: false
+    t.decimal "value_net_sum", precision: 20, scale: 4
+    t.integer "replaced_row_count", default: 0, null: false
+    t.text "error_message"
+    t.datetime "imported_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["period_year", "period_month"], name: "index_tslfu_on_period"
+    t.index ["status"], name: "index_trans_sl_factory_uploads_on_status"
+    t.index ["user_id"], name: "index_trans_sl_factory_uploads_on_user_id"
+  end
+
   create_table "users", force: :cascade do |t|
     t.string "email", null: false
     t.string "password_digest", null: false
@@ -839,6 +923,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_05_28_023000) do
   add_foreign_key "master_outlet_dist_uploads", "users"
   add_foreign_key "master_product_dist_rows", "master_product_dist_uploads"
   add_foreign_key "master_product_dist_uploads", "users"
+  add_foreign_key "master_rental_costs", "master_rental_uploads"
+  add_foreign_key "master_rental_uploads", "users"
   add_foreign_key "sessions", "users"
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
@@ -850,4 +936,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_05_28_023000) do
   add_foreign_key "timeseries_uploads", "users"
   add_foreign_key "trans_sellout_account_transactions", "trans_sellout_account_uploads"
   add_foreign_key "trans_sellout_account_uploads", "users"
+  add_foreign_key "trans_sl_factory_transactions", "trans_sl_factory_uploads"
+  add_foreign_key "trans_sl_factory_uploads", "users"
 end

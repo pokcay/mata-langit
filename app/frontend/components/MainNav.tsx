@@ -158,7 +158,7 @@ export function MainNav({
       <aside
         className={cn(
           "sticky top-0 hidden h-screen shrink-0 flex-col border-r border-hairline bg-page transition-[width] duration-200 lg:flex",
-          open ? "w-56" : "w-14",
+          open ? "w-64" : "w-14",
         )}
       >
         <RailBody
