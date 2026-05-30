@@ -154,6 +154,7 @@ export default function AdminTimeseriesUploads({
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const folderInputRef = React.useRef<HTMLInputElement>(null)
   const activeXhrRef = React.useRef<XMLHttpRequest | null>(null)
+  const importAbortedRef = React.useRef(false)
   const serverAbortRef = React.useRef<AbortController | null>(null)
   const cancelledRef = React.useRef(false)
 
@@ -416,6 +417,7 @@ export default function AdminTimeseriesUploads({
   }
 
   function handleAbortImport() {
+    importAbortedRef.current = true
     activeXhrRef.current?.abort()
     activeXhrRef.current = null
     setImporting(false)
@@ -435,17 +437,47 @@ export default function AdminTimeseriesUploads({
     if (!filesToImport.length) return
     setImporting(true)
     setUploadProgress(0)
+    importAbortedRef.current = false
 
-    const fd = new FormData()
-    filesToImport.forEach((f) => fd.append("files[]", f))
+    // Upload one file per request rather than bundling all of them into a single
+    // POST. A combined upload of the large region exports (RegCen alone is ~60 MB)
+    // exceeds the reverse-proxy / Cloudflare request-body limit and stalls. Each
+    // file sent on its own stays under that cap. Progress is reported as an
+    // aggregate across all files, weighted by byte size.
+    const totalBytes = filesToImport.reduce((sum, f) => sum + f.size, 0)
+    let sentBytes = 0
+    const errors: string[] = []
 
     try {
-      await xhrPost<{ queued: number; upload_ids: number[] }>(
-        "/admin/timeseries/uploads",
-        fd,
-        (pct) => setUploadProgress(pct),
-        activeXhrRef
-      )
+      for (const file of filesToImport) {
+        if (importAbortedRef.current) break
+        const fd = new FormData()
+        fd.append("files[]", file)
+        try {
+          await xhrPost<{ queued: number; upload_ids: number[] }>(
+            "/admin/timeseries/uploads",
+            fd,
+            (_pct, loaded) => {
+              const pct = totalBytes > 0
+                ? Math.round(((sentBytes + loaded) / totalBytes) * 100)
+                : 100
+              setUploadProgress(Math.min(pct, 100))
+            },
+            activeXhrRef
+          )
+        } catch (err) {
+          if (importAbortedRef.current) break
+          errors.push(`${file.name}: ${err instanceof Error ? err.message : "gagal diunggah"}`)
+        }
+        sentBytes += file.size
+        setUploadProgress(totalBytes > 0 ? Math.round((sentBytes / totalBytes) * 100) : 100)
+      }
+
+      if (importAbortedRef.current) return
+
+      if (errors.length) {
+        alert(`Sebagian file gagal diunggah:\n${errors.join("\n")}`)
+      }
       setPreviews(null)
       setImportFiles([])
       setCheckedFiles(new Set())
@@ -453,8 +485,6 @@ export default function AdminTimeseriesUploads({
       // The new uploads are persisted as "pending"; reload the table so they
       // appear immediately and update live via the WebSocket subscription.
       router.reload({ only: ["uploads"] })
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Import gagal.")
     } finally {
       setImporting(false)
       setUploadProgress(null)
@@ -1425,7 +1455,7 @@ function getCsrfToken(): string {
 function xhrPost<T>(
   url: string,
   body: FormData,
-  onProgress: (pct: number) => void,
+  onProgress: (pct: number, loaded: number) => void,
   xhrRef?: React.MutableRefObject<XMLHttpRequest | null>
 ): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -1434,7 +1464,7 @@ function xhrPost<T>(
     xhr.open("POST", url)
     xhr.setRequestHeader("X-CSRF-Token", getCsrfToken())
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100), e.loaded)
     }
     xhr.onload = () => {
       if (xhrRef) xhrRef.current = null
