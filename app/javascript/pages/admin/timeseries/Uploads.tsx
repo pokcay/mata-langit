@@ -84,16 +84,6 @@ type PreviewResult =
     }
   | { filename: string; error: string }
 
-type TrackedUpload = {
-  id: number
-  filename: string
-  status: UploadStatus
-  row_count: number | null
-  netto_wise_sum: number | null
-  error_message: string | null
-  progress_rows: number
-}
-
 type StatusUpdate = {
   type: "status_update"
   upload_id: number
@@ -175,7 +165,6 @@ export default function AdminTimeseriesUploads({
   const [uploadProgress, setUploadProgress] = React.useState<number | null>(null)
   const [dragOver, setDragOver] = React.useState(false)
   const [checkedFiles, setCheckedFiles] = React.useState<Set<string>>(new Set())
-  const [trackedUploads, setTrackedUploads] = React.useState<TrackedUpload[]>([])
   const [searchValue, setSearchValue] = React.useState(filters.search ?? "")
   const [selectedIds, setSelectedIds] = React.useState<Set<number>>(new Set())
 
@@ -183,40 +172,6 @@ export default function AdminTimeseriesUploads({
   React.useEffect(() => {
     setSearchValue(filters.search ?? "")
   }, [filters.search])
-
-  // Subscribe to ActionCable channels for each tracked upload
-  React.useEffect(() => {
-    if (trackedUploads.length === 0) return
-
-    const subs = trackedUploads.map((u) =>
-      consumer.subscriptions.create(
-        { channel: "TimeseriesUploadChannel", upload_id: u.id },
-        {
-          received(data: StatusUpdate | ProgressUpdate) {
-            setTrackedUploads((prev) =>
-              prev.map((t) => {
-                if (t.id !== data.upload_id) return t
-                if (data.type === "progress_update") {
-                  return { ...t, progress_rows: data.progress_rows }
-                }
-                return {
-                  ...t,
-                  status: data.status,
-                  row_count: data.row_count ?? t.row_count,
-                  netto_wise_sum: data.netto_wise_sum ?? t.netto_wise_sum,
-                  error_message: data.error_message ?? t.error_message,
-                }
-              })
-            )
-          },
-        }
-      )
-    )
-
-    return () => subs.forEach((s) => s.unsubscribe())
-    // Re-subscribe only when upload IDs change (not on every status update)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackedUploads.map((u) => u.id).join(",")])
 
   // Mirror the server-rendered history list into local state so WebSocket
   // events for in-flight rows can update the table without a page refresh.
@@ -295,19 +250,10 @@ export default function AdminTimeseriesUploads({
   // Bulk selection / delete
   // -------------------------------------------------------------------------
 
-  // Uploads from the current session are rendered in the "Progress Import"
-  // panel above; suppress them from the history table to avoid showing the
-  // same row twice. Once the user navigates/refreshes, trackedUploads clears
-  // and the history table becomes the single source of truth.
-  const trackedIds = React.useMemo(
-    () => new Set(trackedUploads.map((u) => u.id)),
-    [trackedUploads],
-  )
-
-  const visibleUploads = React.useMemo(
-    () => liveUploads.filter((u) => !trackedIds.has(u.id)),
-    [liveUploads, trackedIds],
-  )
+  // Freshly confirmed uploads land directly in the history table below and
+  // update live via the WebSocket subscription above — there is no separate
+  // "in progress" panel.
+  const visibleUploads = liveUploads
 
   const deletableUploads = React.useMemo(
     () => visibleUploads.filter((u) => u.status !== "pending" && u.status !== "processing"),
@@ -494,26 +440,18 @@ export default function AdminTimeseriesUploads({
     filesToImport.forEach((f) => fd.append("files[]", f))
 
     try {
-      const data = await xhrPost<{ queued: number; upload_ids: number[] }>(
+      await xhrPost<{ queued: number; upload_ids: number[] }>(
         "/admin/timeseries/uploads",
         fd,
         (pct) => setUploadProgress(pct),
         activeXhrRef
       )
-      const initial: TrackedUpload[] = data.upload_ids.map((id, idx) => ({
-        id,
-        filename: filesToImport[idx]?.name ?? `upload-${id}`,
-        status: "pending" as UploadStatus,
-        row_count: null,
-        netto_wise_sum: null,
-        error_message: null,
-        progress_rows: 0,
-      }))
       setPreviews(null)
       setImportFiles([])
       setCheckedFiles(new Set())
       setUploadProgress(null)
-      setTrackedUploads(initial)
+      // The new uploads are persisted as "pending"; reload the table so they
+      // appear immediately and update live via the WebSocket subscription.
       router.reload({ only: ["uploads"] })
     } catch (err) {
       alert(err instanceof Error ? err.message : "Import gagal.")
@@ -528,12 +466,6 @@ export default function AdminTimeseriesUploads({
       method: "PATCH",
       headers: { "X-CSRF-Token": getCsrfToken() },
     })
-  }
-
-  function handleUploadAgain() {
-    setTrackedUploads([])
-    router.reload({ only: ["uploads"] })
-    if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
   function toggleFile(filename: string) {
@@ -560,14 +492,6 @@ export default function AdminTimeseriesUploads({
   // -------------------------------------------------------------------------
 
   const noneChecked = checkedFiles.size === 0
-  const isInProgressView = trackedUploads.length > 0
-
-  const TERMINAL: UploadStatus[] = ["completed", "failed", "cancelled"]
-  const allDone =
-    isInProgressView && trackedUploads.every((u) => TERMINAL.includes(u.status))
-  const successCount = trackedUploads.filter((u) => u.status === "completed").length
-  const cancelCount = trackedUploads.filter((u) => u.status === "cancelled").length
-  const failCount = trackedUploads.filter((u) => u.status === "failed").length
 
   const hasActiveFilter = !!(
     filters.region || filters.year || filters.month || filters.status || filters.search
@@ -610,49 +534,45 @@ export default function AdminTimeseriesUploads({
               <h1>Timeseries Uploads</h1>
               <p className="mt-1">Upload file Excel bulanan per region ke database.</p>
             </div>
-            {!isInProgressView && (
-              <>
-                <div className="flex gap-2">
-                  <Button
-                    variant="primary"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={!!workerProgress || serverQuerying || importing}
-                  >
-                    <Upload className="mr-2 h-4 w-4" />
-                    Upload File
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => folderInputRef.current?.click()}
-                    disabled={!!workerProgress || serverQuerying || importing}
-                  >
-                    <FolderOpen className="mr-2 h-4 w-4" />
-                    Pilih Folder
-                  </Button>
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => handleFilesSelected(e.target.files)}
-                />
-                <input
-                  ref={folderInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => handleFilesSelected(e.target.files)}
-                  {...{ webkitdirectory: "", mozdirectory: "" } as React.InputHTMLAttributes<HTMLInputElement>}
-                />
-              </>
-            )}
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!!workerProgress || serverQuerying || importing}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Upload File
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => folderInputRef.current?.click()}
+                disabled={!!workerProgress || serverQuerying || importing}
+              >
+                <FolderOpen className="mr-2 h-4 w-4" />
+                Pilih Folder
+              </Button>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx"
+              multiple
+              className="hidden"
+              onChange={(e) => handleFilesSelected(e.target.files)}
+            />
+            <input
+              ref={folderInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => handleFilesSelected(e.target.files)}
+              {...{ webkitdirectory: "", mozdirectory: "" } as React.InputHTMLAttributes<HTMLInputElement>}
+            />
           </div>
         </div>
 
         {/* Drop zone (visible only when idle) */}
-        {!isInProgressView && !previews && !workerProgress && !serverQuerying && (
+        {!previews && !workerProgress && !serverQuerying && (
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
             onDragLeave={() => setDragOver(false)}
@@ -705,7 +625,7 @@ export default function AdminTimeseriesUploads({
         )}
 
         {/* Preview panel */}
-        {!isInProgressView && previews && !serverQuerying && (
+        {previews && !serverQuerying && (
           <div className="mt-6">
             <h2 className="mb-1">Preview Import</h2>
             <p className="mb-4 text-sm text-ink-muted">
@@ -766,48 +686,6 @@ export default function AdminTimeseriesUploads({
                 Batal
               </Button>
             </div>
-          </div>
-        )}
-
-        {/* Progress view */}
-        {isInProgressView && (
-          <div className="mt-6">
-            <h2 className="mb-1">Progress Import</h2>
-            <p className="mb-4 text-sm text-ink-muted">
-              Status tiap file diperbarui secara real-time.
-            </p>
-
-            <div className="space-y-3">
-              {trackedUploads.map((u) => (
-                <ProgressCard
-                  key={u.id}
-                  upload={u}
-                  onCancel={() => handleCancelUpload(u.id)}
-                />
-              ))}
-            </div>
-
-            {/* Final summary + Upload lagi */}
-            {allDone && (
-              <div className="mt-5 rounded-md border border-hairline bg-surface p-4">
-                <p className="text-sm font-medium text-ink-display">
-                  {successCount > 0 && (
-                    <span className="mr-3 text-green-600 dark:text-green-400">
-                      {successCount} berhasil
-                    </span>
-                  )}
-                  {cancelCount > 0 && (
-                    <span className="mr-3 text-ink-muted">{cancelCount} dibatalkan</span>
-                  )}
-                  {failCount > 0 && (
-                    <span className="text-red-600 dark:text-red-400">{failCount} gagal</span>
-                  )}
-                </p>
-                <Button variant="secondary" className="mt-3" onClick={handleUploadAgain}>
-                  Upload lagi
-                </Button>
-              </div>
-            )}
           </div>
         )}
 
@@ -941,6 +819,7 @@ export default function AdminTimeseriesUploads({
                     direction={direction}
                     selected={selectedIds.has(u.id)}
                     onToggleSelect={() => toggleSelect(u.id)}
+                    onCancel={() => handleCancelUpload(u.id)}
                   />
                 ))}
               </div>
@@ -998,6 +877,7 @@ export default function AdminTimeseriesUploads({
                       direction={direction}
                       selected={selectedIds.has(u.id)}
                       onToggleSelect={() => toggleSelect(u.id)}
+                      onCancel={() => handleCancelUpload(u.id)}
                     />
                   ))}
                 </tbody>
@@ -1302,71 +1182,6 @@ function PreviewErrorCard({ filename, error }: { filename: string; error: string
   )
 }
 
-function ProgressCard({
-  upload,
-  onCancel,
-}: {
-  upload: TrackedUpload
-  onCancel: () => void
-}) {
-  const isInFlight = upload.status === "pending" || upload.status === "processing"
-  const showProcessingProgress = upload.status === "processing" && upload.progress_rows > 0
-
-  return (
-    <div className="rounded-md border border-hairline bg-surface p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <p
-            className="truncate text-sm font-medium text-ink-display"
-            title={upload.filename}
-          >
-            {upload.filename}
-          </p>
-          {upload.status === "completed" && upload.row_count != null && (
-            <p className="mt-0.5 text-xs text-ink-muted">
-              {upload.row_count.toLocaleString()} baris
-              {upload.netto_wise_sum != null && (
-                <> · Netto Wise {formatNumber(upload.netto_wise_sum)}</>
-              )}
-            </p>
-          )}
-          {showProcessingProgress && (
-            <p className="mt-0.5 text-xs text-ink-muted">
-              {upload.progress_rows.toLocaleString()} baris diproses…
-            </p>
-          )}
-          {upload.error_message && (
-            <p className="mt-0.5 text-xs text-red-600 dark:text-red-400" title={upload.error_message}>
-              {upload.error_message.length > 80
-                ? upload.error_message.slice(0, 80) + "…"
-                : upload.error_message}
-            </p>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <StatusBadge status={upload.status} />
-          {isInFlight && (
-            <Button variant="secondary" size="sm" onClick={onCancel}>
-              <Ban className="mr-1 h-3 w-3" />
-              Batalkan
-            </Button>
-          )}
-        </div>
-      </div>
-      {showProcessingProgress && (
-        <div className="mt-2">
-          <ProgressBar indeterminate />
-        </div>
-      )}
-      {upload.status === "pending" && (
-        <div className="mt-2">
-          <ProgressBar indeterminate />
-        </div>
-      )}
-    </div>
-  )
-}
-
 function UploadTableRow({
   upload,
   filters,
@@ -1374,6 +1189,7 @@ function UploadTableRow({
   direction,
   selected,
   onToggleSelect,
+  onCancel,
 }: {
   upload: UploadRow
   filters: Filters
@@ -1381,8 +1197,10 @@ function UploadTableRow({
   direction: string
   selected: boolean
   onToggleSelect: () => void
+  onCancel: () => void
 }) {
-  const canDelete = upload.status !== "pending" && upload.status !== "processing"
+  const isInFlight = upload.status === "pending" || upload.status === "processing"
+  const canDelete = !isInFlight
 
   function handleDelete() {
     if (!window.confirm(`Hapus "${upload.filename}"?\n\nSemua data transaksi untuk periode ini juga akan dihapus.`)) return
@@ -1427,7 +1245,15 @@ function UploadTableRow({
           : formatDate(upload.created_at)}
       </td>
       <td className="px-2 py-3">
-        {canDelete && (
+        {isInFlight ? (
+          <button
+            onClick={onCancel}
+            title="Batalkan upload ini"
+            className="rounded p-1 text-ink-muted transition-colors hover:text-red-600"
+          >
+            <Ban className="h-3.5 w-3.5" />
+          </button>
+        ) : (
           <button
             onClick={handleDelete}
             title="Hapus upload ini"
@@ -1448,6 +1274,7 @@ function UploadCard({
   direction,
   selected,
   onToggleSelect,
+  onCancel,
 }: {
   upload: UploadRow
   filters: Filters
@@ -1455,8 +1282,10 @@ function UploadCard({
   direction: string
   selected: boolean
   onToggleSelect: () => void
+  onCancel: () => void
 }) {
-  const canDelete = upload.status !== "pending" && upload.status !== "processing"
+  const isInFlight = upload.status === "pending" || upload.status === "processing"
+  const canDelete = !isInFlight
 
   function handleDelete() {
     if (!window.confirm(`Hapus "${upload.filename}"?\n\nSemua data transaksi untuk periode ini juga akan dihapus.`)) return
@@ -1507,7 +1336,14 @@ function UploadCard({
           value={upload.imported_at ? formatDate(upload.imported_at) : formatDate(upload.created_at)}
         />
       </DataCardGrid>
-      {canDelete && (
+      {isInFlight ? (
+        <DataCardActions>
+          <Button variant="ghost" size="sm" onClick={onCancel} className="gap-2 text-red-600">
+            <Ban className="h-4 w-4" />
+            Batalkan
+          </Button>
+        </DataCardActions>
+      ) : (
         <DataCardActions>
           <Button variant="ghost" size="sm" onClick={handleDelete} className="gap-2 text-red-600">
             <Trash2 className="h-4 w-4" />
