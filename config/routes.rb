@@ -76,6 +76,13 @@ Rails.application.routes.draw do
       end
     end
 
+    namespace :master_listing, path: "master-listing" do
+      resources :uploads, only: %i[ index create ] do
+        collection { post :preview }
+        member { patch :cancel }
+      end
+    end
+
     namespace :market_share_b2b, path: "market-share-b2b" do
       resources :uploads, only: %i[ index create destroy ] do
         collection { post :preview }

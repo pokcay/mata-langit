@@ -1,0 +1,23 @@
+feb_row1:
+  master_listing_upload: completed
+  period_year: 2026
+  period_month: 2
+  region: "RegCen"
+  area: "Jawa Barat"
+  dist_parent: "Cahaya Sejahtera Waluya, Bandung"
+  dist_child: "Cahaya Sejahtera Waluya, Bandung"
+  outlet_code: "RCJBB000357"
+  outlet_name: "DAYTI"
+  cost: 2500000
+
+feb_row2:
+  master_listing_upload: completed
+  period_year: 2026
+  period_month: 2
+  region: "RegTim"
+  area: "JatimSel"
+  dist_parent: "Bahagia Intra Niaga, Jember"
+  dist_child: "Bahagia Intra Niaga, Jember"
+  outlet_code: "REJTS000650"
+  outlet_name: "JEMBER ROXY"
+  cost: 4000000

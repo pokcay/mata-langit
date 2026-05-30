@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Banknote, Database, Gauge, Grid3x3, Home, Inbox, LayoutDashboard, Mail, Package, Palette, PieChart, ShieldCheck, ShoppingCart, Store, Table2, TrendingUp, Users } from "lucide-react"
+import { Banknote, Database, Gauge, Grid3x3, Home, Inbox, LayoutDashboard, Mail, Package, Palette, PieChart, ShieldCheck, ShoppingCart, Store, Table2, Tags, TrendingUp, Users } from "lucide-react"
 import { usePage } from "@inertiajs/react"
 import { MainNav, type NavEntry } from "@/components/MainNav"
 import type { PageProps } from "@/types/inertia"
@@ -48,6 +48,7 @@ export function AdminShell({ children, full }: { children: React.ReactNode; full
         url.startsWith("/admin/trans-sellout-account") ||
         url.startsWith("/admin/trans-sl-factory") ||
         url.startsWith("/admin/master-rental") ||
+        url.startsWith("/admin/master-listing") ||
         url.startsWith("/admin/market-share-b2b") ||
         url.startsWith("/admin/data") ||
         url.startsWith("/admin/pivot"),
@@ -87,6 +88,12 @@ export function AdminShell({ children, full }: { children: React.ReactNode; full
           icon: Banknote,
           label: "Master Rental",
           match: (url) => url.startsWith("/admin/master-rental"),
+        },
+        {
+          href: "/admin/master-listing/uploads",
+          icon: Tags,
+          label: "Master Listing",
+          match: (url) => url.startsWith("/admin/master-listing"),
         },
         {
           href: "/admin/market-share-b2b/uploads",

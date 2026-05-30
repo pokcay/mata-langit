@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_05_30_000002) do
+ActiveRecord::Schema[8.0].define(version: 2026_05_30_000004) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -288,6 +288,39 @@ ActiveRecord::Schema[8.0].define(version: 2026_05_30_000002) do
     t.index ["created_at"], name: "index_market_share_b2b_uploads_on_created_at"
     t.index ["status"], name: "index_market_share_b2b_uploads_on_status"
     t.index ["user_id"], name: "index_market_share_b2b_uploads_on_user_id"
+  end
+
+  create_table "master_listing_costs", force: :cascade do |t|
+    t.bigint "master_listing_upload_id", null: false
+    t.integer "period_year", null: false
+    t.integer "period_month", null: false
+    t.string "region"
+    t.string "area"
+    t.string "dist_parent"
+    t.string "dist_child"
+    t.string "outlet_code"
+    t.string "outlet_name"
+    t.bigint "cost"
+    t.index ["master_listing_upload_id"], name: "index_mlc_on_upload_id"
+    t.index ["period_year", "period_month"], name: "index_mlc_on_period"
+  end
+
+  create_table "master_listing_uploads", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "filename", null: false
+    t.integer "period_year", null: false
+    t.integer "period_month", null: false
+    t.string "status", default: "pending", null: false
+    t.integer "row_count", default: 0, null: false
+    t.bigint "total_cost", default: 0, null: false
+    t.integer "replaced_row_count", default: 0, null: false
+    t.text "error_message"
+    t.datetime "imported_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["period_year", "period_month"], name: "index_mlu_on_period"
+    t.index ["status"], name: "index_master_listing_uploads_on_status"
+    t.index ["user_id"], name: "index_master_listing_uploads_on_user_id"
   end
 
   create_table "master_outlet_dist_records", force: :cascade do |t|
@@ -919,6 +952,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_05_30_000002) do
   add_foreign_key "ka_profitability_uploads", "users"
   add_foreign_key "market_share_b2b_records", "market_share_b2b_uploads"
   add_foreign_key "market_share_b2b_uploads", "users"
+  add_foreign_key "master_listing_costs", "master_listing_uploads"
+  add_foreign_key "master_listing_uploads", "users"
   add_foreign_key "master_outlet_dist_records", "master_outlet_dist_uploads"
   add_foreign_key "master_outlet_dist_uploads", "users"
   add_foreign_key "master_product_dist_rows", "master_product_dist_uploads"
